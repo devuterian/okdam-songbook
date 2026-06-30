@@ -1,25 +1,106 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Download, FileJson, LogIn, Upload, Wand2 } from "lucide-react";
 import type { CurrentUser, Song } from "@songbook/shared";
 import { can, sampleSongs } from "@songbook/shared";
 import { analyzeYouTube, fetchCurrentUser, generateReading, upsertSong } from "../lib/api";
 
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+const googleScriptSrc = "https://accounts.google.com/gsi/client";
+
+type GoogleCredentialResponse = {
+  credential?: string;
+};
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize(options: { client_id: string; callback: (response: GoogleCredentialResponse) => void }): void;
+          renderButton(parent: HTMLElement, options: { theme: "outline"; size: "large"; type: "standard"; shape: "rectangular"; text: "signin_with"; width: number }): void;
+        };
+      };
+    };
+  }
+}
+
+function loadGoogleIdentityScript(): Promise<void> {
+  if (window.google?.accounts.id) return Promise.resolve();
+
+  const existingScript = Array.from(document.scripts).find((script) => script.src === googleScriptSrc);
+  if (existingScript) {
+    return new Promise((resolve, reject) => {
+      existingScript.addEventListener("load", () => resolve(), { once: true });
+      existingScript.addEventListener("error", () => reject(new Error("Google 로그인 스크립트를 불러오지 못했어.")), { once: true });
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = googleScriptSrc;
+    script.async = true;
+    script.defer = true;
+    script.addEventListener("load", () => resolve(), { once: true });
+    script.addEventListener("error", () => reject(new Error("Google 로그인 스크립트를 불러오지 못했어.")), { once: true });
+    document.head.append(script);
+  });
+}
+
 export function AdminPage() {
+  const googleButtonRef = useRef<HTMLDivElement>(null);
   const [idToken, setIdToken] = useState("");
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [message, setMessage] = useState("");
   const [draft, setDraft] = useState<Partial<Song>>({ title: "", artist: "", tjNumber: "", status: "active", country: "일본" });
   const [youtubeUrl, setYoutubeUrl] = useState("");
 
-  async function login() {
+  const loginWithToken = useCallback(async (token: string) => {
     try {
-      const current = await fetchCurrentUser(idToken || "mock");
+      setIdToken(token);
+      const current = await fetchCurrentUser(token);
       setUser(current);
       setMessage(`${current.displayName} (${current.role})로 확인됐어.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "로그인 실패");
     }
+  }, []);
+
+  useEffect(() => {
+    if (!googleClientId) return;
+
+    let cancelled = false;
+    loadGoogleIdentityScript()
+      .then(() => {
+        if (cancelled || !window.google?.accounts.id || !googleButtonRef.current) return;
+        window.google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: (response) => {
+            if (response.credential) void loginWithToken(response.credential);
+            else setMessage("Google 로그인 토큰을 받지 못했어.");
+          }
+        });
+        googleButtonRef.current.replaceChildren();
+        window.google.accounts.id.renderButton(googleButtonRef.current, {
+          theme: "outline",
+          size: "large",
+          type: "standard",
+          shape: "rectangular",
+          text: "signin_with",
+          width: 280
+        });
+      })
+      .catch((error: unknown) => {
+        setMessage(error instanceof Error ? error.message : "Google 로그인 초기화 실패");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loginWithToken]);
+
+  async function login() {
+    await loginWithToken(idToken || "mock");
   }
 
   async function saveSong() {
@@ -57,6 +138,11 @@ export function AdminPage() {
 
       <section className="admin-panel">
         <h2>로그인</h2>
+        {googleClientId ? (
+          <div className="google-login-row" ref={googleButtonRef} />
+        ) : (
+          <p className="hint">VITE_GOOGLE_CLIENT_ID가 없어서 수동 토큰/mock 로그인만 사용할 수 있어.</p>
+        )}
         <div className="inline-form">
           <input value={idToken} onChange={(event) => setIdToken(event.target.value)} placeholder="Google ID token 또는 mock" />
           <button type="button" className="primary-button" onClick={login}>
@@ -148,4 +234,3 @@ export function AdminPage() {
     </main>
   );
 }
-

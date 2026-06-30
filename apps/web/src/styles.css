@@ -406,6 +406,11 @@ mark.hit {
   align-items: stretch;
 }
 
+.google-login-row {
+  min-height: 42px;
+  margin-bottom: 10px;
+}
+
 .inline-form input {
   flex: 1;
 }
@@ -448,4 +453,3 @@ pre {
     border-radius: 12px;
   }
 }
-

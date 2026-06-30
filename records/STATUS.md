@@ -7,14 +7,14 @@ Recorded by agent: codex-orchestrator
 
 - Last updated: 2026-07-01
 - Overall posture: `active`
-- Current focus: GitHub repository and Pages are connected; Google production account binding remains.
-- Highest-priority blocker: Real Google OAuth, Apps Script, and Sheet deployment require operator-owned external accounts.
-- Next operator decision needed: Provide OAuth client ID, Apps Script deployment URL, Sheet ID, and allowed user emails.
+- Current focus: GitHub repository, Pages, and Google OAuth client are connected; Apps Script and Sheet production binding remain.
+- Highest-priority blocker: Real Apps Script and Sheet deployment require operator-owned Google resources.
+- Next operator decision needed: Provide Apps Script deployment URL, Sheet ID, and allowed user emails.
 - Related decisions: DEC-20260701-001 through DEC-20260701-008
 
 ## Current State Summary
 
-Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357b741854008a5fb1d61144f02bf518226a0`, and local hooks are installed. The repository now contains a React/Vite PWA workspace, shared TypeScript domain logic, Apps Script source structure, deployment workflow, and setup docs. The public GitHub repository is `https://github.com/devuterian/okdam-songbook`, and GitHub Pages is enabled at `https://devuterian.github.io/okdam-songbook/`. Google account setup is still required for a real end-to-end production smoke test.
+Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357b741854008a5fb1d61144f02bf518226a0`, and local hooks are installed. The repository now contains a React/Vite PWA workspace, shared TypeScript domain logic, Apps Script source structure, deployment workflow, and setup docs. The public GitHub repository is `https://github.com/devuterian/okdam-songbook`, and GitHub Pages is enabled at `https://devuterian.github.io/okdam-songbook/`. Google Cloud project `okdam-songbook` has an external-test OAuth configuration and web client, with the GitHub Actions `VITE_GOOGLE_CLIENT_ID` variable set. Apps Script and Sheet setup are still required for a real end-to-end production smoke test.
 
 ## Active Tracks
 
@@ -53,10 +53,11 @@ Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357
 - Local smoke: `/songbook/` and `/songbook/admin/` returned Vite HTML from `http://127.0.0.1:5173`.
 - GitHub repository: `https://github.com/devuterian/okdam-songbook` created and pushed on 2026-07-01 KST.
 - GitHub Pages: Actions-backed Pages enabled at `https://devuterian.github.io/okdam-songbook/` on 2026-07-01 KST.
+- Google OAuth: Google Cloud project, external-test consent screen, web OAuth client, authorized JavaScript origins, test user, and GitHub Actions `VITE_GOOGLE_CLIENT_ID` variable configured on 2026-07-01 KST.
 
 ## Active Blockers And Risks
 
-- External Google deployment cannot be completed locally.
-  - Effect: Production OAuth and Sheet operations cannot be verified end to end in this turn.
+- Apps Script and Sheet deployment are still pending.
+  - Effect: Production Sheet operations cannot be verified end to end yet.
   - Owner: Operator.
-  - Mitigation: Mock mode, documented setup, and Apps Script source are provided.
+  - Mitigation: OAuth client, mock mode, documented setup, and Apps Script source are provided.
