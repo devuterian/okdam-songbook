@@ -9,9 +9,9 @@ import "./styles.css";
 
 const basePath = import.meta.env.VITE_APP_BASE_PATH || "/okdam-songbook/";
 
-registerSW({
+const updateServiceWorker = registerSW({
   onNeedRefresh() {
-    window.dispatchEvent(new CustomEvent("songbook:update-ready"));
+    window.dispatchEvent(new CustomEvent("songbook:update-ready", { detail: updateServiceWorker }));
   }
 });
 
