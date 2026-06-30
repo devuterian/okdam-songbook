@@ -17,3 +17,13 @@ Object.defineProperty(window, "localStorage", {
   value: storage,
   configurable: true
 });
+
+Object.defineProperty(window, "requestAnimationFrame", {
+  value: (callback: FrameRequestCallback) => window.setTimeout(() => callback(Date.now()), 16),
+  configurable: true
+});
+
+Object.defineProperty(window, "cancelAnimationFrame", {
+  value: (handle: number) => window.clearTimeout(handle),
+  configurable: true
+});

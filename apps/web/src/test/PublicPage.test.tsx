@@ -1,19 +1,149 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicPage } from "../routes/PublicPage";
 
+const runnerStop = vi.fn();
+const engineClear = vi.fn();
+
+vi.mock("matter-js", () => ({
+  Bodies: {
+    rectangle: (x: number, y: number, width: number, height: number, options?: object) => ({
+      angle: 0,
+      angularVelocity: 0,
+      position: { x, y },
+      velocity: { x: 0, y: 0 },
+      width,
+      height,
+      options
+    })
+  },
+  Body: {
+    setAngularVelocity: vi.fn(),
+    setPosition: vi.fn((body, position) => {
+      body.position = position;
+    }),
+    setVelocity: vi.fn((body, velocity) => {
+      body.velocity = velocity;
+    })
+  },
+  Composite: {
+    add: vi.fn(),
+    clear: vi.fn(),
+    remove: vi.fn()
+  },
+  Engine: {
+    clear: engineClear,
+    create: () => ({ gravity: { y: 0 }, world: {} })
+  },
+  Events: {
+    off: vi.fn(),
+    on: vi.fn()
+  },
+  Mouse: {
+    create: vi.fn(() => ({}))
+  },
+  MouseConstraint: {
+    create: vi.fn(() => ({}))
+  },
+  Runner: {
+    create: () => ({}),
+    run: vi.fn(),
+    stop: runnerStop
+  }
+}));
+
+function renderPublic(path = "/") {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/" element={<PublicPage />} />
+        <Route path="/other" element={<div>다른 화면</div>} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
 describe("PublicPage", () => {
+  beforeEach(() => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    vi.stubGlobal("innerWidth", 390);
+    vi.stubGlobal("innerHeight", 844);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect(this: HTMLElement) {
+      if (this.matches("[data-physics-card]")) {
+        const index = Array.from(document.querySelectorAll("[data-physics-card]")).indexOf(this);
+        return { bottom: 210 + index * 92, height: 82, left: 16, right: 374, top: 128 + index * 92, width: 358, x: 16, y: 128 + index * 92, toJSON: () => ({}) };
+      }
+      return { bottom: 40, height: 40, left: 0, right: 100, top: 0, width: 100, x: 0, y: 0, toJSON: () => ({}) };
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    runnerStop.mockClear();
+    engineClear.mockClear();
+  });
+
   it("renders the search interface", async () => {
-    render(
-      <MemoryRouter>
-        <Routes>
-          <Route path="/" element={<PublicPage />} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderPublic();
     expect(screen.getByPlaceholderText("곡명, 아티스트, 독음, TJ 번호")).toBeInTheDocument();
     expect(await screen.findByText("フォニイ")).toBeInTheDocument();
   });
-});
 
+  it("enters physics mode by title double click and restores card styles", async () => {
+    const user = userEvent.setup();
+    renderPublic();
+    await screen.findByText("フォニイ");
+
+    await user.click(screen.getByRole("button", { name: "Songbook" }));
+    await user.click(screen.getByRole("button", { name: "Songbook" }));
+
+    expect(await screen.findByRole("button", { name: "원상복구" })).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector("[data-physics-card]")).toHaveClass("song-card--physics"));
+
+    await user.click(screen.getByRole("button", { name: "원상복구" }));
+    await waitFor(() => expect(document.querySelector("[data-physics-card]")).not.toHaveAttribute("style"));
+    expect(runnerStop).toHaveBeenCalled();
+    expect(engineClear).toHaveBeenCalled();
+  });
+
+  it("does not open song detail while physics mode is active", async () => {
+    const user = userEvent.setup();
+    renderPublic();
+    await screen.findByText("フォニイ");
+
+    await user.click(screen.getByRole("button", { name: "Songbook" }));
+    await user.click(screen.getByRole("button", { name: "Songbook" }));
+    await screen.findByRole("button", { name: "원상복구" });
+
+    await user.click(screen.getByRole("button", { name: /52537/ }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows a toast instead of physics mode for reduced motion users", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const user = userEvent.setup();
+    renderPublic();
+    await screen.findByText("フォニイ");
+
+    await user.click(screen.getByRole("button", { name: "Songbook" }));
+    await user.click(screen.getByRole("button", { name: "Songbook" }));
+
+    expect(await screen.findByText("움직임 줄이기 설정 때문에 physics mode는 실행하지 않았어.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "원상복구" })).not.toBeInTheDocument();
+  });
+
+  it("keeps checkbox labels aligned in the filter sheet", async () => {
+    const user = userEvent.setup();
+    renderPublic();
+    await screen.findByText("フォニイ");
+
+    await user.click(screen.getByRole("button", { name: "필터" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByLabelText("추천 키 있음")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "2곡 보기" })).toBeInTheDocument();
+  });
+});

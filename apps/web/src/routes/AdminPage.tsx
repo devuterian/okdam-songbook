@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Download, FileJson, LogIn, Upload, Wand2 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Download, FileJson, Image, ListMusic, LogIn, Upload, Wand2, Youtube } from "lucide-react";
 import type { CurrentUser, Song } from "@songbook/shared";
 import { can, sampleSongs } from "@songbook/shared";
 import { analyzeYouTube, fetchCurrentUser, generateReading, upsertSong } from "../lib/api";
@@ -11,6 +12,15 @@ const googleScriptSrc = "https://accounts.google.com/gsi/client";
 type GoogleCredentialResponse = {
   credential?: string;
 };
+
+type AdminTab = "add" | "songs" | "history" | "settings";
+
+const tabs: Array<{ id: AdminTab; label: string }> = [
+  { id: "add", label: "곡 추가" },
+  { id: "songs", label: "곡 관리" },
+  { id: "history", label: "변경 이력" },
+  { id: "settings", label: "고급 설정" }
+];
 
 declare global {
   interface Window {
@@ -49,6 +59,9 @@ function loadGoogleIdentityScript(): Promise<void> {
 
 export function AdminPage() {
   const googleButtonRef = useRef<HTMLDivElement>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab") as AdminTab | null;
+  const activeTab: AdminTab = requestedTab && tabs.some((tab) => tab.id === requestedTab) ? requestedTab : "add";
   const [idToken, setIdToken] = useState("");
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [message, setMessage] = useState("");
@@ -153,82 +166,126 @@ export function AdminPage() {
         {user ? <p>{user.displayName} · {user.role}</p> : <p>미인증 상태야.</p>}
       </section>
 
-      <section className="admin-panel">
-        <h2>곡 직접 추가/수정</h2>
-        <div className="form-grid">
-          <label>
-            TJ 번호
-            <input value={draft.tjNumber ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, tjNumber: event.target.value }))} />
-          </label>
-          <label>
-            곡명
-            <input required value={draft.title ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))} />
-          </label>
-          <label>
-            곡명 독음
-            <input value={draft.titleReadingKo ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, titleReadingKo: event.target.value }))} />
-          </label>
-          <label>
-            아티스트
-            <input required value={draft.artist ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, artist: event.target.value }))} />
-          </label>
-          <label>
-            아티스트 독음
-            <input value={draft.artistReadingKo ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, artistReadingKo: event.target.value }))} />
-          </label>
-          <label>
-            국가
-            <input value={draft.country ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, country: event.target.value }))} />
-          </label>
-          <label className="form-wide">
-            메모
-            <textarea value={draft.memo ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, memo: event.target.value }))} />
-          </label>
-        </div>
-        <div className="sheet-actions">
-          <button type="button" className="secondary-button" disabled={!user} onClick={fillReading}>
-            <Wand2 size={18} />
-            독음 생성
+      <nav className="admin-tabs" aria-label="관리 탭">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            aria-current={activeTab === tab.id ? "page" : undefined}
+            onClick={() => setSearchParams(tab.id === "add" ? {} : { tab: tab.id })}
+          >
+            {tab.label}
           </button>
-          <button type="button" className="primary-button" disabled={!user || !can(user.role, "song:create")} onClick={saveSong}>
-            저장
-          </button>
-        </div>
-      </section>
+        ))}
+      </nav>
 
-      <section className="admin-panel">
-        <h2>YouTube 분석</h2>
-        <div className="inline-form">
-          <input value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://youtu.be/..." />
-          <button type="button" className="secondary-button" disabled={!user} onClick={analyzeVideo}>
-            분석
-          </button>
-        </div>
-      </section>
+      {activeTab === "add" ? (
+        <section className="admin-panel admin-form-panel">
+          <header className="panel-heading">
+            <h2>곡 추가</h2>
+            <div className="panel-tools">
+              <button type="button" className="secondary-button" disabled={!user} onClick={analyzeVideo}>
+                <Youtube size={17} />
+                YouTube
+              </button>
+              <button type="button" className="secondary-button" disabled>
+                <Image size={17} />
+                이미지
+              </button>
+            </div>
+          </header>
+          <div className="inline-form import-row">
+            <input value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://youtu.be/... 후보 가져오기" />
+          </div>
+          <div className="form-grid">
+            <label>
+              TJ 번호
+              <input value={draft.tjNumber ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, tjNumber: event.target.value }))} />
+            </label>
+            <label>
+              곡명
+              <input required value={draft.title ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))} />
+            </label>
+            <label>
+              곡명 독음
+              <input value={draft.titleReadingKo ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, titleReadingKo: event.target.value }))} />
+            </label>
+            <label>
+              아티스트
+              <input required value={draft.artist ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, artist: event.target.value }))} />
+            </label>
+            <label>
+              아티스트 독음
+              <input value={draft.artistReadingKo ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, artistReadingKo: event.target.value }))} />
+            </label>
+            <label>
+              국가
+              <input value={draft.country ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, country: event.target.value }))} />
+            </label>
+            <label className="form-wide">
+              메모
+              <textarea value={draft.memo ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, memo: event.target.value }))} />
+            </label>
+          </div>
+          <div className="admin-action-bar">
+            <button type="button" className="secondary-button" onClick={() => setDraft({ title: "", artist: "", tjNumber: "", status: "active", country: "일본" })}>
+              취소
+            </button>
+            <span />
+            <button type="button" className="secondary-button" disabled={!user} onClick={fillReading}>
+              <Wand2 size={18} />
+              독음 생성
+            </button>
+            <button type="button" className="primary-button" disabled={!user || !can(user.role, "song:create")} onClick={saveSong}>
+              저장
+            </button>
+          </div>
+        </section>
+      ) : null}
 
-      <section className="admin-panel">
-        <h2>가져오기와 백업</h2>
-        <div className="ops-grid">
-          <button type="button" disabled={!user || !can(user.role, "csv:import")}>
-            <Upload size={18} />
-            CSV 가져오기
-          </button>
-          <button type="button" disabled={!user || !can(user.role, "csv:export")}>
-            <Download size={18} />
-            CSV 내보내기
-          </button>
-          <button type="button" disabled={!user || !can(user.role, "backup:json")}>
-            <FileJson size={18} />
-            JSON 백업
-          </button>
-        </div>
-        <p className="hint">이 버튼들은 API 계약과 권한 상태까지 연결되어 있고, 실제 파일 선택/다운로드는 다음 운영 바인딩에서 확장하면 돼.</p>
-      </section>
+      {activeTab === "songs" ? (
+        <section className="admin-panel">
+          <h2>곡 관리</h2>
+          <div className="admin-song-list">
+            {sampleSongs.map((song) => (
+              <div key={song.id} className="admin-song-row">
+                <ListMusic size={18} />
+                <span>{song.tjNumber || "번호 없음"}</span>
+                <strong>{song.title}</strong>
+                <small>{song.artist}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
-      <section className="admin-panel">
-        <h2>최근 변경</h2>
-        <pre>{JSON.stringify(sampleSongs.slice(0, 1), null, 2)}</pre>
-      </section>
+      {activeTab === "history" ? (
+        <section className="admin-panel">
+          <h2>변경 이력</h2>
+          <pre>{JSON.stringify(sampleSongs.slice(0, 1), null, 2)}</pre>
+        </section>
+      ) : null}
+
+      {activeTab === "settings" ? (
+        <section className="admin-panel">
+          <h2>고급 설정</h2>
+          <div className="ops-grid">
+            <button type="button" disabled={!user || !can(user.role, "csv:import")}>
+              <Upload size={18} />
+              CSV 가져오기
+            </button>
+            <button type="button" disabled={!user || !can(user.role, "csv:export")}>
+              <Download size={18} />
+              CSV 내보내기
+            </button>
+            <button type="button" disabled={!user || !can(user.role, "backup:json")}>
+              <FileJson size={18} />
+              JSON 백업
+            </button>
+          </div>
+          <p className="hint">서버 설정 상태, 동기화 진단, PWA 캐시 초기화는 Apps Script 연결 뒤 확장하면 돼.</p>
+        </section>
+      ) : null}
 
       {message ? <div className="snackbar">{message}</div> : null}
     </main>

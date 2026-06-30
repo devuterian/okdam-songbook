@@ -54,6 +54,7 @@ Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357
 - GitHub repository: `https://github.com/devuterian/okdam-songbook` created and pushed on 2026-07-01 KST.
 - GitHub Pages: Actions-backed Pages enabled at `https://devuterian.github.io/okdam-songbook/` on 2026-07-01 KST.
 - Google OAuth: Google Cloud project, external-test consent screen, web OAuth client, authorized JavaScript origins, test user, and GitHub Actions `VITE_GOOGLE_CLIENT_ID` variable configured on 2026-07-01 KST.
+- UI smoke direction: Filter UI now uses a mobile bottom sheet and a centered desktop modal capped near 560px, chosen over a desktop bottom sheet because it keeps the public catalog column stable and avoids an over-wide sheet on large screens.
 
 ## Active Blockers And Risks
 

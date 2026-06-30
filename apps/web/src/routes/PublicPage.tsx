@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Filter, Moon, Search, SlidersHorizontal, Sun } from "lucide-react";
+import { Filter, Moon, RotateCcw, Search, SlidersHorizontal, Sun } from "lucide-react";
 import type { CurrentUser, Song, SongFilters, SortKey } from "@songbook/shared";
 import { filterSongs, searchSongs, sortSongs } from "@songbook/shared";
 import { BottomSheet } from "../components/BottomSheet";
@@ -9,6 +9,7 @@ import { SongDetail } from "../components/SongDetail";
 import { createPerformance, fetchPublicData } from "../lib/api";
 import { db, readCachedPublicData, saveCachedPublicData } from "../lib/db";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { usePhysicsMode } from "../hooks/usePhysicsMode";
 import { useTheme } from "../hooks/useTheme";
 
 export function PublicPage() {
@@ -20,7 +21,12 @@ export function PublicPage() {
   const [lastSync, setLastSync] = useState("");
   const [message, setMessage] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [physicsMode, setPhysicsMode] = useState(false);
+  const [physicsResetId, setPhysicsResetId] = useState(0);
   const [theme, setTheme] = useTheme();
+  const titleTapRef = useRef(0);
+  const titleKeyRef = useRef(0);
+  const titleToggleRef = useRef(0);
   const online = useOnlineStatus();
   const user: CurrentUser | null = null;
 
@@ -58,6 +64,22 @@ export function PublicPage() {
     return sortSongs(searchSongs(filterSongs(songs, filters), query), sortKey);
   }, [filters, query, songs, sortKey]);
 
+  const showMessage = useCallback((nextMessage: string) => {
+    setMessage(nextMessage);
+  }, []);
+
+  const exitPhysics = useCallback(() => {
+    setPhysicsMode(false);
+    setPhysicsResetId((version) => version + 1);
+  }, []);
+
+  usePhysicsMode({
+    active: physicsMode,
+    cardSelector: "[data-physics-card]",
+    onExit: exitPhysics,
+    onMessage: showMessage
+  });
+
   async function markPerformed(song: Song) {
     const clientRequestId = crypto.randomUUID();
     const optimistic = songs.map((item) =>
@@ -93,18 +115,86 @@ export function PublicPage() {
 
   const countries = [...new Set(songs.map((song) => song.country).filter(Boolean))];
   const genres = [...new Set(songs.flatMap((song) => song.genres))];
+  const activeFilters = [
+    filters.country ? { key: "country" as const, label: filters.country } : null,
+    filters.genre ? { key: "genre" as const, label: filters.genre } : null,
+    filters.hasKey ? { key: "hasKey" as const, label: "추천 키 있음" } : null,
+    filters.favorite ? { key: "favorite" as const, label: "즐겨찾기" } : null,
+    filters.practicing ? { key: "practicing" as const, label: "연습 중" } : null
+  ].filter(Boolean) as Array<{ key: keyof SongFilters; label: string }>;
+
+  function togglePhysics() {
+    titleToggleRef.current = window.performance.now();
+    setSelected(null);
+    setFilterOpen(false);
+    if (physicsMode) setPhysicsResetId((version) => version + 1);
+    setPhysicsMode(!physicsMode);
+  }
+
+  function onTitleTap() {
+    const now = window.performance.now();
+    if (now - titleTapRef.current < 560) {
+      titleTapRef.current = 0;
+      togglePhysics();
+      return;
+    }
+    titleTapRef.current = now;
+  }
+
+  function onTitleKey(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Enter") return;
+    const now = window.performance.now();
+    if (now - titleKeyRef.current < 700) {
+      titleKeyRef.current = 0;
+      togglePhysics();
+      return;
+    }
+    titleKeyRef.current = now;
+  }
+
+  function onTitleDoubleClick() {
+    if (window.performance.now() - titleToggleRef.current > 220) togglePhysics();
+  }
+
+  function removeFilter(key: keyof SongFilters) {
+    setFilters((previous) => ({ ...previous, [key]: undefined }));
+  }
+
+  function handleFavorite(song: Song) {
+    if (physicsMode) return;
+    setMessage(song.status === "favorite" ? "즐겨찾기는 관리 화면에서 해제할 수 있어." : "즐겨찾기는 관리 화면에서 추가할 수 있어.");
+  }
 
   return (
-    <main className="app-frame">
+    <main className="app-frame" data-physics-active={physicsMode ? "true" : undefined}>
       <header className="topbar">
         <div className="topline">
           <div>
-            <h1>Songbook</h1>
+            <h1
+              className="brand-title"
+              role="button"
+              tabIndex={0}
+              onClick={onTitleTap}
+              onDoubleClick={onTitleDoubleClick}
+              onKeyDown={onTitleKey}
+            >
+              Songbook
+            </h1>
             <p>{online ? "온라인" : "오프라인"} · 마지막 동기화 {lastSync ? new Date(lastSync).toLocaleString() : "없음"}</p>
           </div>
-          <Link className="admin-link" to="/admin">
-            관리
-          </Link>
+          <div className="top-actions">
+            <button
+              type="button"
+              className="icon-button theme-button"
+              aria-label="테마 변경"
+              onClick={() => setTheme(theme === "dark" ? "light" : theme === "light" ? "system" : "dark")}
+            >
+              {theme === "dark" ? <Moon size={17} /> : <Sun size={17} />}
+            </button>
+            <Link className="admin-link" to="/admin">
+              관리
+            </Link>
+          </div>
         </div>
         <label className="search-box">
           <Search size={18} />
@@ -126,31 +216,57 @@ export function PublicPage() {
               <option value="performanceCount">많이 부른 순</option>
             </select>
           </label>
-          <button type="button" aria-label="테마 변경" onClick={() => setTheme(theme === "dark" ? "light" : theme === "light" ? "system" : "dark")}>
-            {theme === "dark" ? <Moon size={17} /> : <Sun size={17} />}
-            {theme}
-          </button>
         </div>
+        {activeFilters.length ? (
+          <div className="active-filters" aria-label="활성 필터">
+            {activeFilters.map((filter) => (
+              <button key={filter.key} type="button" onClick={() => removeFilter(filter.key)}>
+                {filter.label} ×
+              </button>
+            ))}
+            <button type="button" className="clear-filters" onClick={() => setFilters({})}>
+              모두 초기화
+            </button>
+          </div>
+        ) : null}
         <p className="result-count">{visibleSongs.length}곡</p>
       </header>
 
       {message ? <div className="snackbar">{message}</div> : null}
       <section className="song-list" aria-label="곡 목록">
         {visibleSongs.length > 0 ? (
-          visibleSongs.map((song) => <SongCard key={song.id} song={song} query={query} onOpen={setSelected} />)
+          visibleSongs.map((song) => (
+            <SongCard
+              key={`${song.id}-${physicsResetId}`}
+              disabled={physicsMode}
+              song={song}
+              query={query}
+              onFavoriteClick={handleFavorite}
+              onOpen={(nextSong) => {
+                if (!physicsMode) setSelected(nextSong);
+              }}
+            />
+          ))
         ) : (
           <div className="empty-state">{songs.length ? "검색 결과가 없어." : "아직 캐시된 곡이 없어. 한 번 온라인으로 동기화해줘."}</div>
         )}
       </section>
+
+      {physicsMode ? (
+        <button type="button" className="physics-restore" onClick={exitPhysics}>
+          <RotateCcw size={16} />
+          원상복구
+        </button>
+      ) : null}
 
       <BottomSheet open={Boolean(selected)} title={selected?.title ?? ""} onClose={() => setSelected(null)}>
         {selected ? <SongDetail song={selected} user={user} onPerformed={markPerformed} /> : null}
       </BottomSheet>
 
       <BottomSheet open={filterOpen} title="필터" onClose={() => setFilterOpen(false)}>
-        <div className="filter-grid">
-          <label>
-            국가
+        <div className="filter-form">
+          <label className="field-row">
+            <span>국가</span>
             <select value={filters.country ?? ""} onChange={(event) => setFilters((prev) => ({ ...prev, country: event.target.value || undefined }))}>
               <option value="">전체</option>
               {countries.map((country) => (
@@ -160,8 +276,8 @@ export function PublicPage() {
               ))}
             </select>
           </label>
-          <label>
-            장르
+          <label className="field-row">
+            <span>장르</span>
             <select value={filters.genre ?? ""} onChange={(event) => setFilters((prev) => ({ ...prev, genre: event.target.value || undefined }))}>
               <option value="">전체</option>
               {genres.map((genre) => (
@@ -171,18 +287,28 @@ export function PublicPage() {
               ))}
             </select>
           </label>
-          <label>
-            <input type="checkbox" checked={Boolean(filters.hasKey)} onChange={(event) => setFilters((prev) => ({ ...prev, hasKey: event.target.checked || undefined }))} />
-            추천 키 있음
-          </label>
-          <label>
-            <input type="checkbox" checked={Boolean(filters.favorite)} onChange={(event) => setFilters((prev) => ({ ...prev, favorite: event.target.checked || undefined }))} />
-            애창곡
-          </label>
-          <label>
-            <input type="checkbox" checked={Boolean(filters.practicing)} onChange={(event) => setFilters((prev) => ({ ...prev, practicing: event.target.checked || undefined }))} />
-            연습 중
-          </label>
+          <div className="checkbox-group">
+            <label className="checkbox-row">
+              <input type="checkbox" checked={Boolean(filters.hasKey)} onChange={(event) => setFilters((prev) => ({ ...prev, hasKey: event.target.checked || undefined }))} />
+              <span>추천 키 있음</span>
+            </label>
+            <label className="checkbox-row">
+              <input type="checkbox" checked={Boolean(filters.favorite)} onChange={(event) => setFilters((prev) => ({ ...prev, favorite: event.target.checked || undefined }))} />
+              <span>즐겨찾기</span>
+            </label>
+            <label className="checkbox-row">
+              <input type="checkbox" checked={Boolean(filters.practicing)} onChange={(event) => setFilters((prev) => ({ ...prev, practicing: event.target.checked || undefined }))} />
+              <span>연습 중</span>
+            </label>
+          </div>
+          <div className="filter-actions">
+            <button type="button" className="secondary-button" onClick={() => setFilters({})}>
+              초기화
+            </button>
+            <button type="button" className="primary-button" onClick={() => setFilterOpen(false)}>
+              {visibleSongs.length}곡 보기
+            </button>
+          </div>
         </div>
       </BottomSheet>
     </main>
