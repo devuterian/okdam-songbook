@@ -2,12 +2,16 @@
 
 ## GitHub Pages
 
+Repository: `https://github.com/devuterian/okdam-songbook`
+Pages URL: `https://devuterian.github.io/okdam-songbook/`
+
 1. Push to `main`.
 2. In GitHub repository settings, set Pages source to GitHub Actions.
 3. Set Actions variables:
    - `VITE_APPS_SCRIPT_API_URL`
    - `VITE_GOOGLE_CLIENT_ID`
-4. Run the `Deploy GitHub Pages` workflow.
+4. Keep `VITE_APP_BASE_PATH` as `/okdam-songbook/`.
+5. Run the `Deploy GitHub Pages` workflow.
 
 The workflow runs lint, typecheck, tests, and build before deploying `apps/web/dist`.
 
@@ -26,4 +30,3 @@ The workflow runs lint, typecheck, tests, and build before deploying `apps/web/d
 5. `clasp push`.
 6. Run `setupSpreadsheet()`.
 7. Deploy Web App and copy deployment URL to `VITE_APPS_SCRIPT_API_URL`.
-

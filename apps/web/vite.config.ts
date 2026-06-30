@@ -4,7 +4,7 @@ import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const base = env.VITE_APP_BASE_PATH || "/songbook/";
+  const base = env.VITE_APP_BASE_PATH || "/okdam-songbook/";
   return {
     base,
     plugins: [

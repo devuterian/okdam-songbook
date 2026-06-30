@@ -5,7 +5,7 @@ Recorded by agent: codex-orchestrator
 
 - Project: Songbook
 - Project id: `songbook`
-- Canonical repo: pending GitHub repository selection
+- Canonical repo: https://github.com/devuterian/okdam-songbook
 - Operator: Marie
 - Last updated: 2026-07-01
 - Related decisions: DEC-20260701-001 through DEC-20260701-008
@@ -16,8 +16,8 @@ Songbook is a mobile-first karaoke favorite-song manager. It helps a small trust
 
 ## Main Surfaces
 
-- Public GitHub Pages PWA under `/songbook/`.
-- Authenticated admin route under `/songbook/admin/`.
+- Public GitHub Pages PWA under `/okdam-songbook/`.
+- Authenticated admin route under `/okdam-songbook/admin/`.
 - Google Apps Script Web App API.
 - Private Google Sheets workbook with `Songs`, `Performances`, and `ChangeLog` sheets.
 - Repo-local docs and records for deployment, security, data model, and operations.
@@ -43,4 +43,3 @@ Songbook is a mobile-first karaoke favorite-song manager. It helps a small trust
 - ID tokens are verified server side before authenticated operations.
 - `noindex` and link obscurity are documented as discoverability reduction, not access control.
 - Apps Script and GitHub Pages constraints are documented in research records before architecture decisions rely on them.
-

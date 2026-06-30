@@ -19,7 +19,7 @@ Recorded by agent: codex-orchestrator
 - Outcome: Connect real OAuth client, Apps Script Web App URL, private Sheet, and allowed users.
 - Why this is accepted: Real writes and admin auth require operator-owned Google resources.
 - Expected value: Full end-to-end deployment.
-- Preconditions: Operator creates or grants access to Google and GitHub settings.
+- Preconditions: Operator creates or grants access to Google settings.
 - Earliest likely start: after initial build passes.
 - Related ids: RSH-20260701-001, RSH-20260701-002
 
@@ -38,7 +38,7 @@ Recorded by agent: codex-orchestrator
 - Initiative: Deploy Apps Script and Pages with production env values.
   - Status: `waiting on operator-owned external settings`
   - Why later: Needs external account values.
-  - Dependencies: OAuth client, Script Properties, Sheet ID, Pages settings.
+  - Dependencies: OAuth client, Script Properties, Sheet ID, GitHub Actions variables.
   - Related ids: RSH-20260701-001 through RSH-20260701-008
 
 ### Deferred But Accepted

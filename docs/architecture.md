@@ -14,7 +14,7 @@ flowchart LR
 ## Frontend
 
 - React, TypeScript, Vite, React Router.
-- `BrowserRouter` uses `/songbook/` basename.
+- `BrowserRouter` uses `/okdam-songbook/` basename.
 - `vite-plugin-pwa` generates the service worker and manifest.
 - Dexie stores public snapshots and offline performance queue items.
 
@@ -24,4 +24,3 @@ flowchart LR
 - Read-only public data does not require login.
 - Writes require Google ID token verification and allowlist role checks.
 - Sheets are accessed with header maps, `getValues()`, `setValues()`, versions, and `LockService`.
-

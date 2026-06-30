@@ -7,7 +7,7 @@ import { AdminPage } from "./routes/AdminPage";
 import { PublicPage } from "./routes/PublicPage";
 import "./styles.css";
 
-const basePath = import.meta.env.VITE_APP_BASE_PATH || "/songbook/";
+const basePath = import.meta.env.VITE_APP_BASE_PATH || "/okdam-songbook/";
 
 registerSW({
   onNeedRefresh() {
@@ -28,4 +28,3 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     </BrowserRouter>
   </React.StrictMode>
 );
-
