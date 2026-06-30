@@ -25,6 +25,23 @@ export function parseCsvKey(raw: string, idFactory: () => string = () => crypto.
   if (!original) return { candidates: [], warnings: [], original };
 
   const uncertain = /[?？~～]|\/|,/.test(original);
+  const baseOnlyMatch = original.match(/^(여|남)$/);
+  if (baseOnlyMatch) {
+    return {
+      candidates: [
+        {
+          id: idFactory(),
+          baseMode: baseOnlyMatch[1] === "여" ? "female" : "male",
+          offset: 0,
+          label: "추천",
+          memo: "",
+          isPrimary: true
+        }
+      ],
+      warnings: [`키 모드 단독 표기는 원본(${original})을 보존하고 변환했어`],
+      original
+    };
+  }
   const warnings: string[] = uncertain ? [`키 값이 애매해서 원본을 확인해야 해: ${original}`] : [];
   const match = original.match(/^(여|남)?\s*([+-]?\d+)$/);
   if (!match) {

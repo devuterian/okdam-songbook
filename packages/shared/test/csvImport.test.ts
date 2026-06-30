@@ -1,0 +1,49 @@
+import { describe, expect, it } from "vitest";
+import { importSongsFromCsv } from "../src/csvImport";
+
+describe("importSongsFromCsv", () => {
+  it("imports the OK DAM private page CSV", () => {
+    const rows = [
+      { title: "レーゾンデートル", tjNumber: "28805", artist: "Eve", country: "일본", recommender: "여울", key: "0", createdAt: "2022년 3월 20일 오후 9:40" },
+      { title: "春雷", tjNumber: "28795", artist: "米津玄師", country: "일본", recommender: "여울", key: "-2", createdAt: "2022년 3월 20일 오후 9:40" },
+      { title: "瞬き", tjNumber: "28816", artist: "back number", country: "일본", recommender: "여울", key: "여+2", createdAt: "2022년 3월 20일 오후 9:40" },
+      { title: "Dreaming", tjNumber: "27360", artist: "FreeTEMPO", country: "일본", recommender: "마리", key: "", createdAt: "2024년 7월 14일 오후 5:51" },
+      { title: "Tik Tak Tok", tjNumber: "84434", artist: "실리카 겔", country: "한국", recommender: "뽀냐", key: "", createdAt: "2024년 7월 14일 오후 5:49" }
+    ];
+    const report = importSongsFromCsv(rows, { csvFileName: "test.csv", generatedAt: "2026-07-01T00:00:00Z" });
+    expect(report.totalRows).toBe(5);
+    expect(report.inserted).toBe(5);
+    expect(report.skipped).toBe(0);
+    const eve = report.songs.find((song) => song.artist === "Eve");
+    expect(eve?.keyCandidates[0]).toMatchObject({ baseMode: "original", offset: 0, isPrimary: true });
+    const backNumber = report.songs.find((song) => song.artist === "back number");
+    expect(backNumber?.keyCandidates[0]).toMatchObject({ baseMode: "female", offset: 2, isPrimary: true });
+    const spring = report.songs.find((song) => song.artist === "米津玄師");
+    expect(spring?.keyCandidates[0]).toMatchObject({ baseMode: "original", offset: -2, isPrimary: true });
+  });
+
+  it("deduplicates by TJ number and by (title, artist)", () => {
+    const rows = [
+      { title: "배불러", tjNumber: "46528", artist: "이진아" },
+      { title: "배불러", tjNumber: "46528", artist: "이진아" },
+      { title: "Run", tjNumber: "98128", artist: "이진아 (with 그레이)" },
+      { title: "Run", tjNumber: "98129", artist: "이진아 (with 그레이)" }
+    ];
+    const report = importSongsFromCsv(rows, { csvFileName: "test.csv" });
+    expect(report.inserted).toBe(2);
+    expect(report.skipped).toBe(2);
+  });
+
+  it("preserves ambiguous key values as warnings", () => {
+    const rows = [
+      { title: "A", tjNumber: "1", artist: "X", key: "-1?-2?" },
+      { title: "B", tjNumber: "2", artist: "X", key: "남" }
+    ];
+    const report = importSongsFromCsv(rows, { csvFileName: "test.csv" });
+    expect(report.warnings).toBe(2);
+    expect(report.songs.find((s) => s.title === "A")?.keyCandidates).toHaveLength(0);
+    const b = report.songs.find((s) => s.title === "B");
+    expect(b?.keyCandidates[0]).toMatchObject({ baseMode: "male", offset: 0 });
+    expect(b?._warnings.length).toBeGreaterThan(0);
+  });
+});

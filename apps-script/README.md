@@ -28,3 +28,27 @@
 
 Do not commit real emails or secrets.
 
+## Bulk import from the OK DAM personal page
+
+The repository ships a generated Apps Script payload at
+`apps-script/seed/songs.json` produced by `scripts/import-csv.mjs`. After
+deploying the Apps Script, run `setupSpreadsheet()` once and then call
+`importCsvSongs` from the editor or via `clasp`:
+
+```sh
+# Push the latest Apps Script source.
+npx clasp push
+
+# Create a payload file that wraps the generated songs array.
+jq '{ songs: .songs }' apps-script/seed/songs.json > /tmp/import-csv.json
+
+# Run the import against the deployed script. Production requires
+# ALLOW_CSV_IMPORT=true in Script Properties.
+npx clasp run importCsvSongs --payload /tmp/import-csv.json
+```
+
+The function is idempotent: it deduplicates by TJ number and by
+`(title, artist)`, skips rows that collide with existing data, and appends
+only the surviving rows to the `Songs` sheet. See
+`apps-script/seed/import-report.json` for the human-readable summary of what
+`scripts/import-csv.mjs` produced from the source CSV.

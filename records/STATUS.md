@@ -7,10 +7,18 @@ Recorded by agent: codex-orchestrator
 
 - Last updated: 2026-07-01
 - Overall posture: `active`
-- Current focus: GitHub repository, Pages, and Google OAuth client are connected; Apps Script and Sheet production binding remain.
+- Current focus: 115 songs imported from the OK DAM personal page CSV are live in the mock seed and ready for Apps Script/Sheet deployment.
 - Highest-priority blocker: Real Apps Script and Sheet deployment require operator-owned Google resources.
 - Next operator decision needed: Provide Apps Script deployment URL, Sheet ID, and allowed user emails.
 - Related decisions: DEC-20260701-001 through DEC-20260701-008
+
+## Personal page CSV import (2026-07-01)
+
+- Source files: `/Users/marie/Downloads/개인 페이지 & 공유된 페이지/OK DAM!! 3 56a5080d79c147c1915776897acaee2f_all.csv` (full data, 119 data rows) and the header-swapped sibling CSV (same body, different column order).
+- Outcome: 115 inserted, 4 skipped (TJ number duplicates — 배불러 46528, 기억해요 16928, Tik Tak Tok 84434, NO PAIN 82200), 6 warnings (4 `남` base-mode-only rows preserved with original; `-1?-2?` and `+3<` kept as-is).
+- Artifacts: `packages/shared/src/sample.ts` (auto-generated 115-song seed), `apps-script/seed/songs.json` (Apps Script payload), `apps-script/seed/import-report.json` (summary).
+- Backend hook: new `importCsvSongs(payload)` in `apps-script/src/Code.js` is idempotent and dedupes by TJ number and `(title, artist)`. Production requires `ALLOW_CSV_IMPORT=true`.
+- Verification: `npm run lint`, `npm run typecheck`, `npm run test` (18/18), `npm run build` all pass. Vite dev server on `http://127.0.0.1:5182/okdam-songbook/` returned 200 and served the new 115-song sample module.
 
 ## Current State Summary
 
@@ -55,6 +63,11 @@ Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357
 - GitHub Pages: Actions-backed Pages enabled at `https://devuterian.github.io/okdam-songbook/` on 2026-07-01 KST.
 - Google OAuth: Google Cloud project, external-test consent screen, web OAuth client, authorized JavaScript origins, test user, and GitHub Actions `VITE_GOOGLE_CLIENT_ID` variable configured on 2026-07-01 KST.
 - UI smoke direction: Filter UI now uses a mobile bottom sheet and a centered desktop modal capped near 560px, chosen over a desktop bottom sheet because it keeps the public catalog column stable and avoids an over-wide sheet on large screens.
+- `npm run lint`: passed after 115-song CSV import on 2026-07-01 KST.
+- `npm run typecheck`: passed after 115-song CSV import on 2026-07-01 KST.
+- `npm run test`: 18/18 passed after 115-song CSV import on 2026-07-01 KST.
+- `npm run build`: passed after 115-song CSV import on 2026-07-01 KST.
+- Local smoke: `http://127.0.0.1:5182/okdam-songbook/` returned Vite HTML, and `sample.ts` served 115 generated songs.
 
 ## Active Blockers And Risks
 

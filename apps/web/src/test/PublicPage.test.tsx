@@ -90,13 +90,13 @@ describe("PublicPage", () => {
   it("renders the search interface", async () => {
     renderPublic();
     expect(screen.getByPlaceholderText("곡명, 아티스트, 독음, TJ 번호")).toBeInTheDocument();
-    expect(await screen.findByText("フォニイ")).toBeInTheDocument();
+    expect(await screen.findByText("レーゾンデートル")).toBeInTheDocument();
   });
 
   it("enters physics mode by title double click and restores card styles", async () => {
     const user = userEvent.setup();
     renderPublic();
-    await screen.findByText("フォニイ");
+    await screen.findByText("レーゾンデートル");
 
     await user.click(screen.getByRole("button", { name: "Songbook" }));
     await user.click(screen.getByRole("button", { name: "Songbook" }));
@@ -113,13 +113,13 @@ describe("PublicPage", () => {
   it("does not open song detail while physics mode is active", async () => {
     const user = userEvent.setup();
     renderPublic();
-    await screen.findByText("フォニイ");
+    await screen.findByText("レーゾンデートル");
 
     await user.click(screen.getByRole("button", { name: "Songbook" }));
     await user.click(screen.getByRole("button", { name: "Songbook" }));
     await screen.findByRole("button", { name: "원상복구" });
 
-    await user.click(screen.getByRole("button", { name: /52537/ }));
+    await user.click(screen.getByRole("button", { name: /28805/ }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
@@ -127,7 +127,7 @@ describe("PublicPage", () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     const user = userEvent.setup();
     renderPublic();
-    await screen.findByText("フォニイ");
+    await screen.findByText("レーゾンデートル");
 
     await user.click(screen.getByRole("button", { name: "Songbook" }));
     await user.click(screen.getByRole("button", { name: "Songbook" }));
@@ -139,11 +139,11 @@ describe("PublicPage", () => {
   it("keeps checkbox labels aligned in the filter sheet", async () => {
     const user = userEvent.setup();
     renderPublic();
-    await screen.findByText("フォニイ");
+    await screen.findByText("レーゾンデートル");
 
     await user.click(screen.getByRole("button", { name: "필터" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByLabelText("추천 키 있음")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "2곡 보기" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /\d+곡 보기/ })).toBeInTheDocument();
   });
 });

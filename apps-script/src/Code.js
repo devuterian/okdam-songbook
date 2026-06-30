@@ -244,6 +244,95 @@ function appendRows(name, objects) {
   table.sheet.getRange(table.sheet.getLastRow() + 1, 1, objects.length, SHEETS[name].length).setValues(objects.map((object) => objectToRow(name, object)));
 }
 
+function importCsvSongs(payload) {
+  if (scriptProps().getProperty("APP_ENV") === "production" && scriptProps().getProperty("ALLOW_CSV_IMPORT") !== "true") {
+    throw publicError("FORBIDDEN", "운영 환경에서는 importCsvSongs를 직접 호출할 수 없어. ALLOW_CSV_IMPORT=true 설정이 필요해.");
+  }
+  const input = payload && Array.isArray(payload.songs) ? payload.songs : [];
+  if (!input.length) {
+    return { inserted: 0, skipped: 0, errors: [] };
+  }
+  setupSpreadsheet();
+  const existing = readTable("Songs");
+  const byTj = {};
+  const byTitleArtist = {};
+  existing.rows.forEach(({ values }) => {
+    if (values.tjNumber) byTj[String(values.tjNumber)] = values;
+    const key = String(values.title || "").trim().toLowerCase() + "|" + String(values.artist || "").trim().toLowerCase();
+    if (key !== "|") byTitleArtist[key] = values;
+  });
+  const now = new Date().toISOString();
+  const inserted = [];
+  const skipped = [];
+  const errors = [];
+  input.forEach((raw, index) => {
+    try {
+      const song = normalizeImportedSong(raw, now);
+      if (!song.title || !song.artist) {
+        skipped.push({ index, reason: "title 또는 artist 누락", row: raw });
+        return;
+      }
+      if (song.tjNumber && byTj[song.tjNumber]) {
+        skipped.push({ index, reason: "이미 등록된 TJ 번호", tjNumber: song.tjNumber, row: raw });
+        return;
+      }
+      const dedupKey = song.title.toLowerCase() + "|" + song.artist.toLowerCase();
+      if (byTitleArtist[dedupKey]) {
+        skipped.push({ index, reason: "이미 등록된 곡명/아티스트 조합", row: raw });
+        return;
+      }
+      inserted.push(song);
+      if (song.tjNumber) byTj[song.tjNumber] = song;
+      byTitleArtist[dedupKey] = song;
+    } catch (error) {
+      errors.push({ index, message: String((error && error.message) || error), row: raw });
+    }
+  });
+  appendRows("Songs", inserted);
+  return { inserted: inserted.length, skipped: skipped.length, errors: errors.length, skippedDetails: skipped, errorsDetails: errors };
+}
+
+function normalizeImportedSong(raw, now) {
+  const song = {
+    id: raw.id || Utilities.getUuid(),
+    tjNumber: normalizeTjNumber(raw.tjNumber),
+    title: String(raw.title || "").trim().slice(0, 300),
+    titleReadingKo: String(raw.titleReadingKo || "").trim().slice(0, 300),
+    titleRomanized: String(raw.titleRomanized || "").trim().slice(0, 300),
+    titleAliasesJson: JSON.stringify(Array.isArray(raw.titleAliases) ? raw.titleAliases : []),
+    artist: String(raw.artist || "").trim().slice(0, 300),
+    artistReadingKo: String(raw.artistReadingKo || "").trim().slice(0, 300),
+    artistAliasesJson: JSON.stringify(Array.isArray(raw.artistAliases) ? raw.artistAliases : []),
+    country: String(raw.country || "").trim().slice(0, 80),
+    genresJson: JSON.stringify(Array.isArray(raw.genres) ? raw.genres : []),
+    originalWork: String(raw.originalWork || "").trim().slice(0, 200),
+    keyCandidatesJson: JSON.stringify(Array.isArray(raw.keyCandidates) ? raw.keyCandidates : []),
+    memo: String(raw.memo || "").trim().slice(0, 2000),
+    status: raw.status || "active",
+    youtubeUrl: String(raw.youtubeUrl || "").trim(),
+    youtubeVideoId: String(raw.youtubeVideoId || "").trim(),
+    isOfficialTjVideo: raw.isOfficialTjVideo === true || raw.isOfficialTjVideo === false ? raw.isOfficialTjVideo : "",
+    sourceType: String(raw.sourceType || "csv").trim().slice(0, 80),
+    sourceReference: String(raw.sourceReference || "okdam-personal-page").trim().slice(0, 300),
+    createdByEmail: String(raw.createdByEmail || "").trim(),
+    createdByName: String(raw.createdByName || "").trim().slice(0, 80),
+    createdAt: String(raw.createdAt || now),
+    updatedByEmail: String(raw.updatedByEmail || "").trim(),
+    updatedByName: String(raw.updatedByName || (raw.createdByName || "")).trim().slice(0, 80),
+    updatedAt: now,
+    deletedAt: "",
+    deletedByEmail: "",
+    version: 1
+  };
+  return song;
+}
+
+function normalizeTjNumber(value) {
+  if (value === null || value === undefined) return "";
+  const digits = String(value).normalize("NFKC").replace(/[^\d]/g, "");
+  return digits ? digits : "";
+}
+
 function updateRow(name, rowNumber, object) {
   const sheet = getSpreadsheet().getSheetByName(name);
   sheet.getRange(rowNumber, 1, 1, SHEETS[name].length).setValues([objectToRow(name, object)]);
@@ -559,4 +648,3 @@ function callStructuredAi(task, input) {
   if (response.getResponseCode() >= 300) throw publicError("EXTERNAL_API_ERROR", "AI API 호출에 실패했어.");
   return JSON.parse(response.getContentText());
 }
-
