@@ -27,7 +27,11 @@ export default [
         HTMLElement: "readonly",
         HTMLDivElement: "readonly",
         KeyboardEvent: "readonly",
-        CustomEvent: "readonly"
+        CustomEvent: "readonly",
+        btoa: "readonly",
+        atob: "readonly",
+        TextEncoder: "readonly",
+        TextDecoder: "readonly",
       }
     },
     plugins: {

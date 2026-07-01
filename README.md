@@ -14,6 +14,16 @@
 - Apps Script Sheet setup, public read, token verification, role-checked writes, ChangeLog
 - CSV/JSON/AI/YouTube/Image 분석을 위한 안전한 API 경계와 수동 폴백
 
+## 인증 상태 관리
+
+`apps/web/src/lib/auth/AuthContext.tsx`가 Google ID token을 메모리에서만 보관합니다.
+모든 쓰기 API(`upsertSong`, `createPerformance`, `cancelPerformance`,
+`analyzeYouTube`, `generateReading`)는 `requireValidCredential()`을 통해
+유효한 토큰을 보장하고, 서버가 `UNAUTHORIZED` / `FORBIDDEN`을 돌려주면 캐시된
+credential을 폐기한 뒤 재인증을 요구합니다. 공개 화면 header는 현재 상태
+(예: `마리 · owner`, `다시 로그인 필요`, `비로그인`)를 작은 칩으로 보여줘서
+stale credential이 조용히 재사용되지 않게 합니다.
+
 ## 구조
 
 ```text
@@ -77,4 +87,3 @@ Script Properties에는 실제 값을 넣습니다.
 ## 보안상 한계
 
 `robots.txt`와 `noindex`는 검색 노출을 줄일 뿐 접근 통제가 아닙니다. 공개 앱과 공개 읽기 API URL을 아는 사람은 비삭제 공개 곡 목록을 볼 수 있습니다. 쓰기 권한은 Apps Script의 ID 토큰 검증과 allowlist가 최종 판단합니다.
-

@@ -2,16 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { Download, FileJson, Image, ListMusic, LogIn, Upload, Wand2, Youtube } from "lucide-react";
-import type { CurrentUser, PerformerId, Song } from "@songbook/shared";
+import type { PerformerId, Song } from "@songbook/shared";
 import { can, performerOrder, performers, sampleSongs } from "@songbook/shared";
-import { analyzeYouTube, fetchCurrentUser, fetchPublicData, generateReading, upsertSong, mockMode as apiMockMode } from "../lib/api";
+import { analyzeYouTube, fetchPublicData, generateReading, isApiAuthError, mockMode, upsertSong } from "../lib/api";
+import { useAuth, AuthRequiredError } from "../lib/auth/AuthContext";
 
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 const googleScriptSrc = "https://accounts.google.com/gsi/client";
-
-type GoogleCredentialResponse = {
-  credential?: string;
-};
 
 type AdminTab = "add" | "songs" | "history" | "settings";
 
@@ -22,22 +18,8 @@ const tabs: Array<{ id: AdminTab; label: string }> = [
   { id: "settings", label: "고급 설정" }
 ];
 
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize(options: { client_id: string; callback: (response: GoogleCredentialResponse) => void }): void;
-          renderButton(parent: HTMLElement, options: { theme: "outline"; size: "large"; type: "standard"; shape: "rectangular"; text: "signin_with"; width: number }): void;
-        };
-      };
-    };
-  }
-}
-
 function loadGoogleIdentityScript(): Promise<void> {
   if (window.google?.accounts.id) return Promise.resolve();
-
   const existingScript = Array.from(document.scripts).find((script) => script.src === googleScriptSrc);
   if (existingScript) {
     return new Promise((resolve, reject) => {
@@ -45,7 +27,6 @@ function loadGoogleIdentityScript(): Promise<void> {
       existingScript.addEventListener("error", () => reject(new Error("Google 로그인 스크립트를 불러오지 못했어.")), { once: true });
     });
   }
-
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = googleScriptSrc;
@@ -58,20 +39,20 @@ function loadGoogleIdentityScript(): Promise<void> {
 }
 
 export function AdminPage() {
+  const auth = useAuth();
   const googleButtonRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab") as AdminTab | null;
   const activeTab: AdminTab = requestedTab && tabs.some((tab) => tab.id === requestedTab) ? requestedTab : "add";
-  const [idToken, setIdToken] = useState("");
-  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [tokenInput, setTokenInput] = useState("");
   const [message, setMessage] = useState("");
   const [draft, setDraft] = useState<Partial<Song>>({ title: "", artist: "", tjNumber: "", status: "active", country: "일본", performerIds: [] });
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [songs, setSongs] = useState<Song[]>(() => (apiMockMode ? sampleSongs : []));
+  const [songs, setSongs] = useState<Song[]>(() => (mockMode() ? sampleSongs : []));
   const [songsError, setSongsError] = useState("");
 
   useEffect(() => {
-    if (apiMockMode) return;
+    if (mockMode()) return;
     let cancelled = false;
     fetchPublicData()
       .then((data) => {
@@ -87,29 +68,27 @@ export function AdminPage() {
     };
   }, []);
 
-  const loginWithToken = useCallback(async (token: string) => {
-    try {
-      setIdToken(token);
-      const current = await fetchCurrentUser(token);
-      setUser(current);
-      setMessage(`${current.displayName} (${current.role})로 확인됐어.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "로그인 실패");
-    }
-  }, []);
-
+  // One Google Identity Services init. The AuthProvider owns the actual
+  // credential state; this block only renders the visible button so the user
+  // can grant a fresh credential on demand.
   useEffect(() => {
-    if (!googleClientId) return;
-
+    if (mockMode()) return;
+    const clientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? undefined;
+    if (!clientId || !googleButtonRef.current) return;
     let cancelled = false;
     loadGoogleIdentityScript()
       .then(() => {
         if (cancelled || !window.google?.accounts.id || !googleButtonRef.current) return;
         window.google.accounts.id.initialize({
-          client_id: googleClientId,
+          client_id: clientId,
           callback: (response) => {
-            if (response.credential) void loginWithToken(response.credential);
-            else setMessage("Google 로그인 토큰을 받지 못했어.");
+            if (response.credential) {
+              auth.loginWithCredential(response.credential).catch((error) => {
+                setMessage(error instanceof Error ? error.message : "로그인 실패");
+              });
+            } else {
+              setMessage("Google 로그인 토큰을 받지 못했어.");
+            }
           }
         });
         googleButtonRef.current.replaceChildren();
@@ -125,35 +104,103 @@ export function AdminPage() {
       .catch((error: unknown) => {
         setMessage(error instanceof Error ? error.message : "Google 로그인 초기화 실패");
       });
-
     return () => {
       cancelled = true;
     };
-  }, [loginWithToken]);
+  }, [auth]);
 
-  async function login() {
-    await loginWithToken(idToken || "mock");
+  const handleAuthError = useCallback(
+    (error: unknown): boolean => {
+      if (error instanceof AuthRequiredError) {
+        setMessage(error.message);
+        return true;
+      }
+      if (isApiAuthError(error)) {
+        setMessage("로그인이 만료됐어. 다시 로그인해줘.");
+        return true;
+      }
+      return false;
+    },
+    []
+  );
+
+  async function loginWithToken() {
+    const token = tokenInput.trim();
+    if (!token) {
+      try {
+        await auth.loginWithGoogleButton();
+        setMessage(`${auth.user?.displayName ?? "로그인"} 확인됐어.`);
+      } catch (error) {
+        handleAuthError(error);
+      }
+      return;
+    }
+    try {
+      const user = await auth.loginWithCredential(token);
+      setMessage(`${user.displayName} (${user.role})로 확인됐어.`);
+    } catch (error) {
+      handleAuthError(error);
+    }
+  }
+
+  async function requireWriteCredential() {
+    try {
+      return await auth.requireValidCredential();
+    } catch (error) {
+      handleAuthError(error);
+      throw error;
+    }
   }
 
   async function saveSong() {
-    if (!user || !can(user.role, "song:create")) return;
-    const saved = await upsertSong(draft, idToken || "mock", crypto.randomUUID());
-    setDraft(saved);
-    setMessage("저장했어. editor 곡도 즉시 공개 목록에 반영돼.");
+    if (!auth.user || !can(auth.user.role, "song:create")) return;
+    let idToken: string;
+    try {
+      idToken = await requireWriteCredential();
+    } catch {
+      return;
+    }
+    try {
+      const saved = await upsertSong(draft, idToken, crypto.randomUUID());
+      setDraft(saved);
+      setMessage("저장했어. editor 곡도 즉시 공개 목록에 반영돼.");
+    } catch (error) {
+      if (!handleAuthError(error)) setMessage(error instanceof Error ? error.message : "저장 실패");
+    }
   }
 
   async function fillReading() {
-    if (!user) return;
-    const reading = await generateReading({ title: draft.title ?? "", artist: draft.artist ?? "" }, idToken || "mock");
-    setDraft((prev) => ({ ...prev, ...reading }));
-    setMessage("독음 후보를 채웠어. 저장 전에 수정할 수 있어.");
+    if (!auth.user) return;
+    let idToken: string;
+    try {
+      idToken = await requireWriteCredential();
+    } catch {
+      return;
+    }
+    try {
+      const reading = await generateReading({ title: draft.title ?? "", artist: draft.artist ?? "" }, idToken);
+      setDraft((prev) => ({ ...prev, ...reading }));
+      setMessage("독음 후보를 채웠어. 저장 전에 수정할 수 있어.");
+    } catch (error) {
+      if (!handleAuthError(error)) setMessage(error instanceof Error ? error.message : "독음 생성 실패");
+    }
   }
 
   async function analyzeVideo() {
-    if (!user) return;
-    const result = await analyzeYouTube(youtubeUrl, idToken || "mock");
-    setDraft((prev) => ({ ...prev, ...result }));
-    setMessage("YouTube 분석 후보를 불러왔어. 자동 저장은 하지 않았어.");
+    if (!auth.user) return;
+    let idToken: string;
+    try {
+      idToken = await requireWriteCredential();
+    } catch {
+      return;
+    }
+    try {
+      const result = await analyzeYouTube(youtubeUrl, idToken);
+      setDraft((prev) => ({ ...prev, ...result }));
+      setMessage("YouTube 분석 후보를 불러왔어. 자동 저장은 하지 않았어.");
+    } catch (error) {
+      if (!handleAuthError(error)) setMessage(error instanceof Error ? error.message : "YouTube 분석 실패");
+    }
   }
 
   function toggleDraftPerformer(id: PerformerId) {
@@ -163,6 +210,12 @@ export function AdminPage() {
       return { ...previous, performerIds: next };
     });
   }
+
+  const credentialStatus = auth.user
+    ? `${auth.user.displayName} · ${auth.user.role}${auth.credentialExpiresAt ? ` · 만료 ${new Date(auth.credentialExpiresAt).toLocaleTimeString()}` : ""}`
+    : auth.status === "reauthRequired"
+      ? "다시 로그인 필요"
+      : "미인증";
 
   return (
     <main className="admin-frame">
@@ -178,19 +231,27 @@ export function AdminPage() {
 
       <section className="admin-panel">
         <h2>로그인</h2>
-        {googleClientId ? (
-          <div className="google-login-row" ref={googleButtonRef} />
-        ) : (
-          <p className="hint">VITE_GOOGLE_CLIENT_ID가 없어서 수동 토큰/mock 로그인만 사용할 수 있어.</p>
-        )}
+        {mockMode() ? (
+          <p className="hint">mock 모드 — 아무 토큰이나 사용 가능해.</p>
+        ) : null}
+        <div className="google-login-row" ref={googleButtonRef} />
         <div className="inline-form">
-          <input value={idToken} onChange={(event) => setIdToken(event.target.value)} placeholder="Google ID token 또는 mock" />
-          <button type="button" className="primary-button" onClick={login}>
+          <input
+            value={tokenInput}
+            onChange={(event) => setTokenInput(event.target.value)}
+            placeholder="Google ID token을 붙여넣거나 비워두고 버튼을 눌러"
+          />
+          <button type="button" className="primary-button" onClick={() => void loginWithToken()}>
             <LogIn size={18} />
             확인
           </button>
         </div>
-        {user ? <p>{user.displayName} · {user.role}</p> : <p>미인증 상태야.</p>}
+        <p data-testid="admin-auth-state">{credentialStatus}</p>
+        {auth.user ? (
+          <button type="button" className="secondary-button" onClick={() => auth.signOut()}>
+            로그아웃
+          </button>
+        ) : null}
       </section>
 
       <nav className="admin-tabs" aria-label="관리 탭">
@@ -211,7 +272,7 @@ export function AdminPage() {
           <header className="panel-heading">
             <h2>곡 추가</h2>
             <div className="panel-tools">
-              <button type="button" className="secondary-button" disabled={!user} onClick={analyzeVideo}>
+              <button type="button" className="secondary-button" disabled={!auth.user} onClick={() => void analyzeVideo()}>
                 <Youtube size={17} />
                 YouTube
               </button>
@@ -277,11 +338,11 @@ export function AdminPage() {
               취소
             </button>
             <span />
-            <button type="button" className="secondary-button" disabled={!user} onClick={fillReading}>
+            <button type="button" className="secondary-button" disabled={!auth.user} onClick={() => void fillReading()}>
               <Wand2 size={18} />
               독음 생성
             </button>
-            <button type="button" className="primary-button" disabled={!user || !can(user.role, "song:create")} onClick={saveSong}>
+            <button type="button" className="primary-button" disabled={!auth.user || !can(auth.user.role, "song:create")} onClick={() => void saveSong()}>
               저장
             </button>
           </div>
@@ -316,15 +377,15 @@ export function AdminPage() {
         <section className="admin-panel">
           <h2>고급 설정</h2>
           <div className="ops-grid">
-            <button type="button" disabled={!user || !can(user.role, "csv:import")}>
+            <button type="button" disabled={!auth.user || !can(auth.user.role, "csv:import")}>
               <Upload size={18} />
               CSV 가져오기
             </button>
-            <button type="button" disabled={!user || !can(user.role, "csv:export")}>
+            <button type="button" disabled={!auth.user || !can(auth.user.role, "csv:export")}>
               <Download size={18} />
               CSV 내보내기
             </button>
-            <button type="button" disabled={!user || !can(user.role, "backup:json")}>
+            <button type="button" disabled={!auth.user || !can(auth.user.role, "backup:json")}>
               <FileJson size={18} />
               JSON 백업
             </button>

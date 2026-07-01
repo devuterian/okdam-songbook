@@ -17,6 +17,7 @@ function renderAdmin() {
 
 describe("AdminPage", () => {
   beforeEach(() => {
+    vi.stubEnv("VITE_ENABLE_MOCK_API", "true");
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   });
 

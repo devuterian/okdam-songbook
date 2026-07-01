@@ -1,18 +1,21 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Filter, Moon, RotateCcw, Search, SlidersHorizontal, Sun } from "lucide-react";
-import type { CurrentUser, PerformerId, Song, SongFilters, SortKey } from "@songbook/shared";
+import type { PerformerId, Song, SongFilters, SortKey } from "@songbook/shared";
 import { filterSongs, performerOrder, performers, searchSongs, sortSongs } from "@songbook/shared";
 import { BottomSheet } from "../components/BottomSheet";
 import { SongCard } from "../components/SongCard";
 import { SongDetail } from "../components/SongDetail";
-import { createPerformance, cancelPerformance, fetchPublicData } from "../lib/api";
+import { cancelPerformance, createPerformance, fetchPublicData } from "../lib/api";
 import { db, readCachedPublicData, saveCachedPublicData } from "../lib/db";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { usePhysicsMode } from "../hooks/usePhysicsMode";
 import { useTheme } from "../hooks/useTheme";
+import { AuthRequiredError, useAuth } from "../lib/auth/AuthContext";
 
 export function PublicPage() {
+  const auth = useAuth();
+  const navigate = useNavigate();
   const [songs, setSongs] = useState<Song[]>([]);
   const [query, setQuery] = useState(() => window.localStorage.getItem("songbook:query") ?? "");
   const [sortKey, setSortKey] = useState<SortKey>(() => (window.localStorage.getItem("songbook:sort") as SortKey | null) ?? "title");
@@ -28,7 +31,7 @@ export function PublicPage() {
   const titleKeyRef = useRef(0);
   const titleToggleRef = useRef(0);
   const online = useOnlineStatus();
-  const user: CurrentUser | null = null;
+  const pendingPerformanceRef = useRef<{ songId: string; clientRequestId: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,12 +85,26 @@ export function PublicPage() {
 
   const [lastPerformed, setLastPerformed] = useState<{ performanceId: string; clientRequestId: string; songId: string } | null>(null);
 
+  const loginHint = useCallback(() => {
+    setMessage("기록하려면 Google 로그인이 필요해. 관리 화면으로 이동할게.");
+    window.setTimeout(() => navigate("/admin"), 800);
+  }, [navigate]);
+
+  async function performSong(song: Song, idToken: string) {
+    const clientRequestId = crypto.randomUUID();
+    const result = await createPerformance(song.id, idToken, clientRequestId);
+    const performanceId = result && typeof result === "object" && "id" in result ? String((result as { id: string }).id) : "";
+    setLastPerformed(performanceId ? { performanceId, clientRequestId, songId: song.id } : null);
+    setMessage(performanceId ? "오늘 부른 곡으로 기록했어. 8초 안에 취소할 수 있어." : "오늘 부른 곡으로 기록했어.");
+  }
+
   async function markPerformed(song: Song) {
     const clientRequestId = crypto.randomUUID();
     const optimistic = songs.map((item) =>
       item.id === song.id ? { ...item, performanceCount: item.performanceCount + 1, lastPerformedAt: new Date().toISOString() } : item
     );
     setSongs(optimistic);
+
     if (!online) {
       await db.queue.put({
         id: clientRequestId,
@@ -100,12 +117,23 @@ export function PublicPage() {
       setMessage("오프라인이라 큐에 저장했어. 온라인 복귀 후 자동 동기화돼.");
       return;
     }
+
     try {
-      const result = await createPerformance(song.id, null, clientRequestId);
-      const performanceId = (result && typeof result === "object" && "id" in result) ? String((result as { id: string }).id) : "";
-      setLastPerformed(performanceId ? { performanceId, clientRequestId, songId: song.id } : null);
-      setMessage(performanceId ? "오늘 부른 곡으로 기록했어. 8초 안에 취소할 수 있어." : "오늘 부른 곡으로 기록했어.");
+      const idToken = await auth.requireValidCredential();
+      await performSong(song, idToken);
     } catch (error) {
+      // Roll back the optimistic count if the write was never sent (auth fail).
+      if (error instanceof AuthRequiredError) {
+        setSongs((prev) => prev.map((item) =>
+          item.id === song.id
+            ? { ...item, performanceCount: Math.max(0, (item.performanceCount ?? 0) - 1), lastPerformedAt: item.lastPerformedAt }
+            : item
+        ));
+        pendingPerformanceRef.current = { songId: song.id, clientRequestId };
+        loginHint();
+        return;
+      }
+      // Network/server error: queue offline so the user does not lose the record.
       await db.queue.put({
         id: clientRequestId,
         action: "performance:create",
@@ -145,9 +173,14 @@ export function PublicPage() {
       return;
     }
     try {
-      await cancelPerformance(target.performanceId, "", target.clientRequestId);
+      const idToken = await auth.requireValidCredential();
+      await cancelPerformance(target.performanceId, idToken, target.clientRequestId);
       setMessage("방금 기록한 곡을 취소했어.");
     } catch (error) {
+      if (error instanceof AuthRequiredError) {
+        setMessage("취소하려면 Google 로그인이 필요해.");
+        return;
+      }
       await db.queue.put({
         id: crypto.randomUUID(),
         action: "performance:cancel",
@@ -161,6 +194,24 @@ export function PublicPage() {
       setMessage("취소에 실패해서 큐에 저장했어.");
     }
   }
+
+  // Resume a pending performance record after the user finishes signing in.
+  useEffect(() => {
+    if (auth.status !== "authenticated") return;
+    const pending = pendingPerformanceRef.current;
+    if (!pending) return;
+    pendingPerformanceRef.current = null;
+    const song = songs.find((entry) => entry.id === pending.songId);
+    if (!song) return;
+    void (async () => {
+      try {
+        const idToken = await auth.requireValidCredential();
+        await performSong(song, idToken);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "기록에 실패했어.");
+      }
+    })();
+  }, [auth, auth.status, auth.forceUpdateToken, songs]);
 
   const countries = [...new Set(songs.map((song) => song.country).filter(Boolean))];
   const genres = [...new Set(songs.flatMap((song) => song.genres))];
@@ -231,6 +282,12 @@ export function PublicPage() {
     setMessage(song.status === "favorite" ? "즐겨찾기는 관리 화면에서 해제할 수 있어." : "즐겨찾기는 관리 화면에서 추가할 수 있어.");
   }
 
+  const authLabel = auth.user
+    ? `${auth.user.displayName} · ${auth.user.role}`
+    : auth.displayInfo
+      ? `${auth.displayInfo.displayName} · 다시 로그인 필요`
+      : "비로그인";
+
   return (
     <main className="app-frame" data-physics-active={physicsMode ? "true" : undefined}>
       <header className="topbar">
@@ -246,7 +303,11 @@ export function PublicPage() {
             >
               Songbook
             </h1>
-            <p>{online ? "온라인" : "오프라인"} · 마지막 동기화 {lastSync ? new Date(lastSync).toLocaleString() : "없음"}</p>
+            <p>
+              {online ? "온라인" : "오프라인"} · 마지막 동기화 {lastSync ? new Date(lastSync).toLocaleString() : "없음"}
+              {" · "}
+              <span data-testid="public-auth-state" className="auth-pill">{authLabel}</span>
+            </p>
           </div>
           <div className="top-actions">
             <button
@@ -335,7 +396,7 @@ export function PublicPage() {
       ) : null}
 
       <BottomSheet open={Boolean(selected)} title={selected?.title ?? ""} onClose={() => setSelected(null)}>
-        {selected ? <SongDetail song={selected} user={user} onPerformed={markPerformed} /> : null}
+        {selected ? <SongDetail song={selected} user={auth.user} onPerformed={markPerformed} /> : null}
       </BottomSheet>
 
       <BottomSheet open={filterOpen} title="필터" onClose={() => setFilterOpen(false)}>

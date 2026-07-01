@@ -104,3 +104,29 @@ Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357
 ## Active Blockers And Risks
 
 - Live `/exec?action=publicData` is wired end-to-end; remaining work is browser-side smoke (network shape, owner login, create/cancel performance, song add/restore) which the operator will run from the deployed site after the Pages rebuild.
+
+## Auth state unification (2026-07-01)
+
+- `apps/web/src/lib/auth/AuthContext.tsx` now owns the Google ID credential
+  in memory only. The provider re-authenticates on every write call so the
+  public "오늘 불렀습니다" flow no longer reuses an expired or missing token.
+- All write APIs (`upsertSong`, `createPerformance`, `cancelPerformance`,
+  `analyzeYouTube`, `generateReading`) flow through `requireValidCredential()`.
+  When the server returns `UNAUTHORIZED` / `FORBIDDEN`, the cached credential
+  is dropped and the next write forces a re-auth.
+- `apps/web/src/lib/googleIdentity.ts` loads the GIS script exactly once and
+  shares the singleton with the admin login button. `AdminPage` and
+  `PublicPage` mount inside a single `AuthProvider` at the app root.
+- `api.ts` exposes `isApiAuthError()` so React pages can branch on
+  UNAUTHORIZED without parsing server messages.
+- Display-only data (email + name) is persisted in `sessionStorage` and
+  surfaces a "다시 로그인 필요" pill in the public header so we never imply
+  the user is signed in without a fresh credential.
+- Shared helpers `isJwtExpired` / `jwtExpiresAt` / `decodeJwtPayload` live in
+  `packages/shared/src/auth/jwt.ts` and are reused by the AuthProvider.
+- Vitest setup forces `VITE_ENABLE_MOCK_API=false` so `apps/web/src/lib/api.ts`
+  is exercised against the mocked fetch surface. PublicPage/AdminPage tests
+  re-enable the mock branch for backwards-compatible assertions.
+- Verification: `npm run lint` clean, `npm run typecheck` clean,
+  `npm run test` 53/53 (web 15/15 + shared 38/38), `npm run build` produces
+  a fresh `index-Doi1asXn.js` PWA bundle.

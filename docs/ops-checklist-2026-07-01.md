@@ -60,3 +60,27 @@ npx @google/clasp run 'importCsvSongs' --params "[$(cat /tmp/import.json)]"
 3. Public page → pick a song → "오늘 불렀습니다" → expect POST `/exec?action=createPerformance` returning `{id}`.
 4. Click the "취소" toast button → expect POST `/exec?action=cancelPerformance` returning `{cancelledAt}`.
 5. Sheet's `Performances` → that row has `cancelledAt` set.
+
+## Auth state (2026-07-01)
+
+- Google ID token is **never** persisted. `apps/web/src/lib/auth/AuthContext.tsx`
+  holds the credential in memory only and re-authenticates on every write call.
+- `requireValidCredential()` is the single entry point used by `upsertSong`,
+  `createPerformance`, `cancelPerformance`, `analyzeYouTube`,
+  `generateReading`. If the token is missing, expired, or rejected with
+  `UNAUTHORIZED` / `FORBIDDEN`, the provider drops the cached credential and
+  surfaces a reauth prompt.
+- The public header shows the current auth state (`마리 · owner` /
+  `다시 로그인 필요` / `비로그인`) so we never imply the user is signed in
+  without a fresh credential.
+- The admin page mounts a single Google Identity Services button. The
+  AuthProvider owns the actual credential state — there is no duplicate
+  `idToken` state in the admin component.
+- Live smoke now requires:
+  1. Click any song → "오늘 불렀습니다" → expect snackbar with "취소".
+  2. The button hits `/exec?action=createPerformance` and the Sheet's
+     `Performances` sheet gets a new row.
+  3. Tap "취소" → `/exec?action=cancelPerformance` returns the cancelled row.
+  4. Re-tap "오늘 불렀습니다" with the tab in incognito → expect
+     "기록하려면 Google 로그인이 필요해." snackbar and a navigation prompt
+     to `/admin` for sign-in.
