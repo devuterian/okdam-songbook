@@ -9,8 +9,9 @@ export interface CachedSnapshot {
 
 export interface OfflineQueueItem {
   id: string;
-  action: "performance:create";
+  action: "performance:create" | "performance:cancel";
   songId: string;
+  performanceId?: string;
   payload: Record<string, unknown>;
   createdAt: string;
   status: "pending" | "failed";
@@ -39,4 +40,3 @@ export async function readCachedPublicData(): Promise<PublicData | null> {
 export async function saveCachedPublicData(data: PublicData): Promise<void> {
   await db.snapshots.put({ id: "public", data, savedAt: new Date().toISOString() });
 }
-

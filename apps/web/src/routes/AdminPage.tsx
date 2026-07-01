@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { Download, FileJson, Image, ListMusic, LogIn, Upload, Wand2, Youtube } from "lucide-react";
 import type { CurrentUser, PerformerId, Song } from "@songbook/shared";
 import { can, performerOrder, performers, sampleSongs } from "@songbook/shared";
-import { analyzeYouTube, fetchCurrentUser, generateReading, upsertSong } from "../lib/api";
+import { analyzeYouTube, fetchCurrentUser, fetchPublicData, generateReading, upsertSong, mockMode as apiMockMode } from "../lib/api";
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 const googleScriptSrc = "https://accounts.google.com/gsi/client";
@@ -67,6 +67,25 @@ export function AdminPage() {
   const [message, setMessage] = useState("");
   const [draft, setDraft] = useState<Partial<Song>>({ title: "", artist: "", tjNumber: "", status: "active", country: "일본", performerIds: [] });
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [songs, setSongs] = useState<Song[]>(() => (apiMockMode ? sampleSongs : []));
+  const [songsError, setSongsError] = useState("");
+
+  useEffect(() => {
+    if (apiMockMode) return;
+    let cancelled = false;
+    fetchPublicData()
+      .then((data) => {
+        if (cancelled) return;
+        setSongs(data.songs);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setSongsError(error instanceof Error ? error.message : "곡 목록을 불러오지 못했어.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loginWithToken = useCallback(async (token: string) => {
     try {
@@ -272,8 +291,9 @@ export function AdminPage() {
       {activeTab === "songs" ? (
         <section className="admin-panel">
           <h2>곡 관리</h2>
+          {songsError ? <p className="hint error">{songsError}</p> : null}
           <div className="admin-song-list">
-            {sampleSongs.map((song) => (
+            {songs.map((song) => (
               <div key={song.id} className="admin-song-row">
                 <ListMusic size={18} />
                 <span>{song.tjNumber || "번호 없음"}</span>
@@ -288,7 +308,7 @@ export function AdminPage() {
       {activeTab === "history" ? (
         <section className="admin-panel">
           <h2>변경 이력</h2>
-          <pre>{JSON.stringify(sampleSongs.slice(0, 1), null, 2)}</pre>
+          <pre>{JSON.stringify(songs.slice(0, 1), null, 2)}</pre>
         </section>
       ) : null}
 

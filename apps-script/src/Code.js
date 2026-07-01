@@ -94,6 +94,7 @@ function routeRequest(e, method) {
     if (action === "publicData") return jsonResponse(ok(publicData(), requestId));
     if (action === "currentUser") return jsonResponse(ok(requireUser(body.idToken), requestId));
     if (action === "createPerformance") return jsonResponse(ok(createPerformance(body), requestId));
+    if (action === "cancelPerformance") return jsonResponse(ok(cancelPerformance(body), requestId));
     if (action === "upsertSong") return jsonResponse(ok(upsertSong(body), requestId));
     if (action === "analyzeYouTube") return jsonResponse(ok(analyzeYouTube(body), requestId));
     if (action === "generateReading") return jsonResponse(ok(generateReading(body), requestId));
@@ -644,6 +645,38 @@ function createPerformance(body) {
     appendRows("Performances", [row]);
     appendChange("Performance", id, "create", null, row, user, clientRequestId, 0, 1);
     return { id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function cancelPerformance(body) {
+  const user = requireUser(body.idToken);
+  requirePermission(user, "performance:cancel");
+  const performanceId = String(body.performanceId || "");
+  if (!performanceId) throw publicError("BAD_REQUEST", "performanceId가 필요해.");
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(8000);
+  try {
+    const clientRequestId = String(body.clientRequestId || Utilities.getUuid());
+    const duplicate = findChangeByClientRequestId(clientRequestId);
+    if (duplicate) return { duplicate: true, id: duplicate.entityId };
+    const table = readTable("Performances");
+    const target = table.rows.find((entry) => String(entry.values.id) === performanceId);
+    if (!target) throw publicError("NOT_FOUND", "해당 performance를 찾지 못했어.");
+    if (target.values.cancelledAt) {
+      return { duplicate: true, id: performanceId, alreadyCancelled: true };
+    }
+    const now = new Date().toISOString();
+    const before = Object.assign({}, target.values);
+    const next = Object.assign({}, target.values, {
+      cancelledAt: now,
+      cancelledByEmail: user.email,
+      version: Number(target.values.version || 1) + 1
+    });
+    updateRow("Performances", target.rowNumber, next);
+    appendChange("Performance", performanceId, "cancel", before, next, user, clientRequestId, Number(before.version || 1), next.version);
+    return { id: performanceId, cancelledAt: now };
   } finally {
     lock.releaseLock();
   }

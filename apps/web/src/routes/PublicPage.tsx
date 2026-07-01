@@ -6,7 +6,7 @@ import { filterSongs, performerOrder, performers, searchSongs, sortSongs } from 
 import { BottomSheet } from "../components/BottomSheet";
 import { SongCard } from "../components/SongCard";
 import { SongDetail } from "../components/SongDetail";
-import { createPerformance, fetchPublicData } from "../lib/api";
+import { createPerformance, cancelPerformance, fetchPublicData } from "../lib/api";
 import { db, readCachedPublicData, saveCachedPublicData } from "../lib/db";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { usePhysicsMode } from "../hooks/usePhysicsMode";
@@ -80,13 +80,14 @@ export function PublicPage() {
     onMessage: showMessage
   });
 
+  const [lastPerformed, setLastPerformed] = useState<{ performanceId: string; clientRequestId: string; songId: string } | null>(null);
+
   async function markPerformed(song: Song) {
     const clientRequestId = crypto.randomUUID();
     const optimistic = songs.map((item) =>
       item.id === song.id ? { ...item, performanceCount: item.performanceCount + 1, lastPerformedAt: new Date().toISOString() } : item
     );
     setSongs(optimistic);
-    setMessage("오늘 부른 곡으로 기록했어. 8초 안에 큐에서 취소할 수 있어.");
     if (!online) {
       await db.queue.put({
         id: clientRequestId,
@@ -96,10 +97,14 @@ export function PublicPage() {
         createdAt: new Date().toISOString(),
         status: "pending"
       });
+      setMessage("오프라인이라 큐에 저장했어. 온라인 복귀 후 자동 동기화돼.");
       return;
     }
     try {
-      await createPerformance(song.id, null, clientRequestId);
+      const result = await createPerformance(song.id, null, clientRequestId);
+      const performanceId = (result && typeof result === "object" && "id" in result) ? String((result as { id: string }).id) : "";
+      setLastPerformed(performanceId ? { performanceId, clientRequestId, songId: song.id } : null);
+      setMessage(performanceId ? "오늘 부른 곡으로 기록했어. 8초 안에 취소할 수 있어." : "오늘 부른 곡으로 기록했어.");
     } catch (error) {
       await db.queue.put({
         id: clientRequestId,
@@ -110,6 +115,50 @@ export function PublicPage() {
         status: "failed",
         errorMessage: error instanceof Error ? error.message : "기록 실패"
       });
+      setMessage("기록에 실패해서 큐에 저장했어.");
+    }
+  }
+
+  async function undoLastPerformance() {
+    const target = lastPerformed;
+    if (!target) {
+      setMessage("취소할 기록이 없어.");
+      return;
+    }
+    setLastPerformed(null);
+    setSongs((prev) => prev.map((item) =>
+      item.id === target.songId
+        ? { ...item, performanceCount: Math.max(0, (item.performanceCount ?? 0) - 1), lastPerformedAt: "" }
+        : item
+    ));
+    if (!online) {
+      await db.queue.put({
+        id: crypto.randomUUID(),
+        action: "performance:cancel",
+        songId: target.songId,
+        performanceId: target.performanceId,
+        payload: { performanceId: target.performanceId },
+        createdAt: new Date().toISOString(),
+        status: "pending"
+      });
+      setMessage("오프라인이라 취소는 큐에 저장했어.");
+      return;
+    }
+    try {
+      await cancelPerformance(target.performanceId, "", target.clientRequestId);
+      setMessage("방금 기록한 곡을 취소했어.");
+    } catch (error) {
+      await db.queue.put({
+        id: crypto.randomUUID(),
+        action: "performance:cancel",
+        songId: target.songId,
+        performanceId: target.performanceId,
+        payload: { performanceId: target.performanceId },
+        createdAt: new Date().toISOString(),
+        status: "failed",
+        errorMessage: error instanceof Error ? error.message : "취소 실패"
+      });
+      setMessage("취소에 실패해서 큐에 저장했어.");
     }
   }
 
@@ -249,7 +298,16 @@ export function PublicPage() {
         <p className="result-count">{visibleSongs.length}곡</p>
       </header>
 
-      {message ? <div className="snackbar">{message}</div> : null}
+      {message ? (
+        <div className="snackbar">
+          <span>{message}</span>
+          {lastPerformed ? (
+            <button type="button" className="snackbar-action" onClick={() => void undoLastPerformance()}>
+              취소
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <section className="song-list" aria-label="곡 목록">
         {visibleSongs.length > 0 ? (
           visibleSongs.map((song) => (

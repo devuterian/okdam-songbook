@@ -28,6 +28,18 @@ Recorded by agent: codex-orchestrator
 - Seed outcome: 115/115 imported songs have performer IDs; 23 legacy `뽀냐` rows became `["marie", "yeowool"]`; 0 unknown performer names; 0 empty performer rows.
 - Apps Script: `setupSpreadsheet()` appends `performerIdsJson`, `upsertSong` validates performer IDs, and `migrateRecommendersToPerformers({ dryRun })` migrates existing Sheet rows idempotently.
 
+## Production Binding (2026-07-01)
+
+- Apps Script project `1Pzp6evn-Oh-hTcp6lowody9egge0k8TiChYBaWpRzKvP8IrEcWPR8yJ1` is bound to `iam.marierie@gmail.com` and the clasp login is stored at `~/.clasprc.json`.
+- Google Sheet `Okdam Songbook Data` (private) is at `1VU3ad7z19J92V18DKmqVNzfpRzCKywXKxmXoD3EscgM`.
+- Script Properties (`SPREADSHEET_ID`, `GOOGLE_OAUTH_CLIENT_ID`, `ALLOWED_USERS_JSON`, `ALLOWED_ORIGINS=https://devuterian.github.io`, `APP_ENV=production`, `ALLOW_CSV_IMPORT=true`) are saved; production must flip `ALLOW_CSV_IMPORT` back to `false` after import.
+- Apps Script code is pushed via clasp. New server-side `cancelPerformance` handler + `/exec` route are live in the pushed source. New `db.ts` offline-queue row type now supports `performance:cancel` payloads.
+- Frontend mock fallback hardened: `api.ts` now exports `mockMode` and `productionMisconfigured`. Production with `VITE_ENABLE_MOCK_API=false` and an empty `VITE_APPS_SCRIPT_API_URL` fails loudly instead of silently serving `sampleSongs`.
+- AdminPage now fetches `/exec?action=publicData` when not in mock mode; `sampleSongs` is no longer the source of truth in production.
+- PublicPage now wires the toast "취소" button to `cancelPerformance`, with offline-queue fallback for the cancel action.
+- GitHub Actions: `VITE_GOOGLE_CLIENT_ID` is registered; `VITE_APPS_SCRIPT_API_URL` is intentionally empty until the operator completes the Apps Script Web App deploy.
+- `docs/ops-checklist-2026-07-01.md` records the exact Sheet ID / Script ID / OAuth client ID / Variable state and the operator-only steps that follow.
+
 ## Current State Summary
 
 Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357b741854008a5fb1d61144f02bf518226a0`, and local hooks are installed. The repository now contains a React/Vite PWA workspace, shared TypeScript domain logic, Apps Script source structure, deployment workflow, and setup docs. The public GitHub repository is `https://github.com/devuterian/okdam-songbook`, and GitHub Pages is enabled at `https://devuterian.github.io/okdam-songbook/`. Google Cloud project `okdam-songbook` has an external-test OAuth configuration and web client, with the GitHub Actions `VITE_GOOGLE_CLIENT_ID` variable set. Apps Script and Sheet setup are still required for a real end-to-end production smoke test.
@@ -75,11 +87,15 @@ Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357
 - `npm run typecheck`: passed after 115-song CSV import on 2026-07-01 KST.
 - `npm run test`: 18/18 passed after 115-song CSV import on 2026-07-01 KST.
 - `npm run build`: passed after 115-song CSV import on 2026-07-01 KST.
+- `npm run lint`: passed after production-binding mock/seed hardening (mockMode + productionMisconfigured) on 2026-07-01 KST.
+- `npm run typecheck`: passed after production-binding mock/seed hardening on 2026-07-01 KST.
+- `npm run test`: 32/32 passed (web 8/8 + shared 24/24) after production-binding mock/seed hardening on 2026-07-01 KST.
+- `npm run build`: passed after production-binding mock/seed hardening on 2026-07-01 KST.
 - Local smoke: `http://127.0.0.1:5182/okdam-songbook/` returned Vite HTML, and `sample.ts` served 115 generated songs.
 
 ## Active Blockers And Risks
 
-- Apps Script and Sheet deployment are still pending.
-  - Effect: Production Sheet operations cannot be verified end to end yet.
-  - Owner: Operator.
-  - Mitigation: OAuth client, mock mode, documented setup, and Apps Script source are provided.
+- Apps Script Web App `/exec` deploy is still pending in the Apps Script editor.
+  - Effect: `VITE_APPS_SCRIPT_API_URL` cannot be set, so the live site is still showing the empty-mock error banner (intentional fail-loud posture).
+  - Owner: Operator (one Google account login + one "new deployment" click in the Apps Script editor).
+  - Mitigation: All other binding (Sheet, Script Properties, OAuth, allowlist, source push, import payload) is complete; only the deployment URL and the single `importCsvSongs` run are left.

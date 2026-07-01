@@ -1,7 +1,15 @@
 import { publicDataSchema, sampleSongs, type CurrentUser, type PublicData, type Song } from "@songbook/shared";
 
 const apiUrl = import.meta.env.VITE_APPS_SCRIPT_API_URL as string | undefined;
-const mockMode = (import.meta.env.VITE_ENABLE_MOCK_API ?? "true") === "true" || !apiUrl;
+const enableMock = (import.meta.env.VITE_ENABLE_MOCK_API ?? "true") === "true";
+// Mock is local-dev only. Production must explicitly disable mock and point at
+// the real Apps Script /exec URL. An empty API URL must fail loudly.
+export const mockMode = enableMock;
+export const productionMisconfigured = !enableMock && !apiUrl;
+
+function missingApiUrl(): never {
+  throw new Error("VITE_APPS_SCRIPT_API_URL이 설정되지 않았어. Apps Script webapp /exec URL을 GitHub Actions Variable에 등록해.");
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -16,6 +24,7 @@ async function parseResponse<T>(response: Response, parser: (value: unknown) => 
 }
 
 export async function fetchPublicData(): Promise<PublicData> {
+  if (productionMisconfigured) missingApiUrl();
   if (mockMode) {
     return publicDataSchema.parse({
       songs: sampleSongs,
@@ -37,12 +46,22 @@ export async function fetchCurrentUser(idToken: string): Promise<CurrentUser> {
   return parseResponse(response, (data) => data as CurrentUser);
 }
 
-export async function createPerformance(songId: string, idToken: string | null, clientRequestId: string): Promise<void> {
-  if (mockMode) return;
+export async function createPerformance(songId: string, idToken: string | null, clientRequestId: string): Promise<{ id: string; duplicate?: boolean }> {
+  if (mockMode) return { id: `mock-${clientRequestId}` };
   const response = await fetch(`${apiUrl}?action=createPerformance`, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ idToken, songId, clientRequestId, performedAt: nowIso() })
+  });
+  return parseResponse(response, (data) => data as { id: string; duplicate?: boolean });
+}
+
+export async function cancelPerformance(performanceId: string, idToken: string, clientRequestId: string): Promise<void> {
+  if (mockMode) return;
+  const response = await fetch(`${apiUrl}?action=cancelPerformance`, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ idToken, performanceId, clientRequestId })
   });
   await parseResponse(response, () => null);
 }
@@ -78,4 +97,3 @@ export async function generateReading(input: { title: string; artist: string }, 
   });
   return parseResponse(response, (data) => data as { titleReadingKo: string; artistReadingKo: string });
 }
-
