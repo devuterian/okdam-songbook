@@ -93,9 +93,14 @@ Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357
 - `npm run build`: passed after production-binding mock/seed hardening on 2026-07-01 KST.
 - Local smoke: `http://127.0.0.1:5182/okdam-songbook/` returned Vite HTML, and `sample.ts` served 115 generated songs.
 
+## Live Production Bind (2026-07-01)
+
+- Apps Script Web App deployed at `https://script.google.com/macros/s/AKfycbzjsFNu3vY0YSX3pTNRK5xDK3MVOwOxV76i5L52iQy2SoCxDOJsXQZ-i4IaKuBN6qz0/exec` (deployment ID `AKfycbzjsFNu3vY0YSX3pTNRK5xDK3MVOwOxV76i5L52iQy2SoCxDOJsXQZ-i4IaKuBN6qz0 @2`).
+- `setupSpreadsheet()` ran in the editor; `Songs` / `Performances` / `ChangeLog` sheets exist.
+- New editor-only helper `importSeedSongsOnce()` is in `apps-script/src/Code.js` and the 115-song payload is in `apps-script/src/seedSongs.gs`. Operator ran it; Logger reported `inserted=115, totalSongsAfter=115, marie+yeowool=23`, and the function flipped `ALLOW_CSV_IMPORT` to `false`.
+- GitHub Actions Variable `VITE_APPS_SCRIPT_API_URL` is registered. Pages workflow sets `VITE_ENABLE_MOCK_API=false`, so the next Pages build will hit the real `/exec` URL.
+- `VITE_GOOGLE_CLIENT_ID` was already registered. Owner test user `iam.marierie@gmail.com` is in `ALLOWED_USERS_JSON` with `role: owner`.
+
 ## Active Blockers And Risks
 
-- Apps Script Web App `/exec` deploy is still pending in the Apps Script editor.
-  - Effect: `VITE_APPS_SCRIPT_API_URL` cannot be set, so the live site is still showing the empty-mock error banner (intentional fail-loud posture).
-  - Owner: Operator (one Google account login + one "new deployment" click in the Apps Script editor).
-  - Mitigation: All other binding (Sheet, Script Properties, OAuth, allowlist, source push, import payload) is complete; only the deployment URL and the single `importCsvSongs` run are left.
+- Live `/exec?action=publicData` is wired end-to-end; remaining work is browser-side smoke (network shape, owner login, create/cancel performance, song add/restore) which the operator will run from the deployed site after the Pages rebuild.

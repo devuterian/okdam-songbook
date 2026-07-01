@@ -261,6 +261,42 @@ function appendRows(name, objects) {
   table.sheet.getRange(table.sheet.getLastRow() + 1, 1, objects.length, SHEETS[name].length).setValues(objects.map((object) => objectToRow(name, object)));
 }
 
+function importSeedSongsOnce() {
+  if (scriptProps().getProperty("ALLOW_CSV_IMPORT") !== "true") {
+    throw publicError("FORBIDDEN", "ALLOW_CSV_IMPORT=true 일 때만 importSeedSongsOnce를 실행할 수 있어.");
+  }
+  const before = readTable("Songs").rows.length;
+  Logger.log("importSeedSongsOnce: start; existingSongs=" + before);
+  setupSpreadsheet();
+  const result = importCsvSongs({ songs: SEED_SONGS });
+  const after = readTable("Songs").rows.length;
+  const ponyaCount = readTable("Songs").rows.filter((entry) => {
+    try {
+      const ids = JSON.parse(entry.values.performerIdsJson || "[]");
+      return Array.isArray(ids) && ids.indexOf("marie") !== -1 && ids.indexOf("yeowool") !== -1;
+    } catch (error) {
+      return false;
+    }
+  }).length;
+  const summary = {
+    input: SEED_SONGS.length,
+    inserted: result && typeof result.inserted === "number" ? result.inserted : 0,
+    skipped: result && typeof result.skipped === "number" ? result.skipped : 0,
+    warnings: result && Array.isArray(result.skippedDetails) ? result.skippedDetails.length : 0,
+    totalSongsAfter: after,
+    existingSongsBefore: before,
+    ponyaMarieYeowoolRows: ponyaCount
+  };
+  Logger.log("importSeedSongsOnce: " + JSON.stringify(summary));
+  if (summary.inserted === SEED_SONGS.length && summary.totalSongsAfter === before + SEED_SONGS.length) {
+    scriptProps().setProperty("ALLOW_CSV_IMPORT", "false");
+    Logger.log("importSeedSongsOnce: ALLOW_CSV_IMPORT flipped to false (success path).");
+  } else {
+    Logger.log("importSeedSongsOnce: ALLOW_CSV_IMPORT kept true because inserted (" + summary.inserted + ") or totalSongsAfter (" + summary.totalSongsAfter + ") did not match expected (" + SEED_SONGS.length + ").");
+  }
+  return summary;
+}
+
 function importCsvSongs(payload) {
   if (scriptProps().getProperty("APP_ENV") === "production" && scriptProps().getProperty("ALLOW_CSV_IMPORT") !== "true") {
     throw publicError("FORBIDDEN", "운영 환경에서는 importCsvSongs를 직접 호출할 수 없어. ALLOW_CSV_IMPORT=true 설정이 필요해.");
