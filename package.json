@@ -5,7 +5,8 @@
   "type": "module",
   "workspaces": [
     "apps/web",
-    "packages/shared"
+    "packages/shared",
+    "integrations/chatgpt-proxy"
   ],
   "scripts": {
     "dev": "npm run dev -w @songbook/web",

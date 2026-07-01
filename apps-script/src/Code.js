@@ -88,21 +88,65 @@ function doPost(e) {
 
 function routeRequest(e, method) {
   const requestId = Utilities.getUuid();
+  const initialAction = String((e.parameter && e.parameter.action) || "");
+  let action = initialAction;
+  LAST_STEP.requestId = requestId;
+  LAST_STEP.action = action;
+  LAST_STEP.step = "request start";
+  LAST_STEP.at = new Date().toISOString();
   try {
-    const action = String((e.parameter && e.parameter.action) || "");
     const body = method === "POST" ? parseBody(e.postData && e.postData.contents) : {};
+    action = String(initialAction || (body && body.action) || "");
+    LAST_STEP.action = action;
     if (action === "publicData") return jsonResponse(ok(publicData(), requestId));
     if (action === "currentUser") return jsonResponse(ok(requireUser(body.idToken), requestId));
     if (action === "createPerformance") return jsonResponse(ok(createPerformance(body), requestId));
     if (action === "cancelPerformance") return jsonResponse(ok(cancelPerformance(body), requestId));
-    if (action === "upsertSong") return jsonResponse(ok(upsertSong(body), requestId));
+    if (action === "upsertSong") return jsonResponse(ok(upsertSong(body, requestId), requestId));
     if (action === "analyzeYouTube") return jsonResponse(ok(analyzeYouTube(body), requestId));
     if (action === "generateReading") return jsonResponse(ok(generateReading(body), requestId));
     if (action === "schema") return jsonResponse(ok(validateSpreadsheetSchema(), requestId));
+    if (action === "gptSearchSongs") return jsonResponse(ok(gptSearchSongs(body, e), requestId));
+    if (action === "gptCheckDuplicate") return jsonResponse(ok(gptCheckDuplicate(body, e), requestId));
+    if (action === "gptAddSong") return jsonResponse(ok(gptAddSong(body, requestId, e), requestId));
     return jsonResponse(fail("BAD_REQUEST", "알 수 없는 action이야.", requestId));
   } catch (error) {
+    logServerError(requestId, action, error);
     return jsonResponse(errorToResponse(error, requestId));
   }
+}
+
+var LAST_STEP = { requestId: "", action: "", step: "", at: "" };
+
+function logStep(requestId, action, step, extra) {
+  // Server-side step trace. No idToken, no PII, no full body.
+  LAST_STEP.requestId = requestId || "";
+  LAST_STEP.action = action || "";
+  LAST_STEP.step = step || "";
+  LAST_STEP.at = new Date().toISOString();
+  const line = Object.assign({ level: "step", requestId, action, step, at: new Date().toISOString() }, extra || {});
+  console.error(JSON.stringify(line));
+  Logger.log("[step] requestId=" + requestId + " action=" + action + " step=" + step + (extra ? " extra=" + JSON.stringify(extra) : ""));
+}
+
+function newRequestId() {
+  return Utilities.getUuid();
+}
+
+function logServerError(requestId, action, error) {
+  // Server-side diagnostic only. Never logs idToken, full body, or other PII.
+  const name = (error && error.name) || "Error";
+  const message = (error && error.message) || String(error);
+  const stack = (error && error.stack) || "";
+  console.error(JSON.stringify({
+    level: "error",
+    requestId,
+    action,
+    errorName: name,
+    errorMessage: message,
+    errorStack: stack
+  }));
+  Logger.log("[error] requestId=" + requestId + " action=" + action + " name=" + name + " message=" + message + " stack=" + stack);
 }
 
 function ok(data, requestId) {
@@ -120,7 +164,19 @@ function jsonResponse(payload) {
 function errorToResponse(error, requestId) {
   const code = error && error.code ? error.code : "INTERNAL_ERROR";
   const message = error && error.publicMessage ? error.publicMessage : "요청을 처리하지 못했어.";
-  return fail(code, message, requestId, null);
+  const details = debugErrorDetails(error, requestId);
+  return fail(code, message, requestId, details);
+}
+
+function debugErrorDetails(error, requestId) {
+  // Off by default. Only enabled when Script Property DEBUG_API_ERRORS=true.
+  // Never returns idToken, raw email, full body, full stack, or Script Properties.
+  if (scriptProps().getProperty("DEBUG_API_ERRORS") !== "true") return null;
+  const name = (error && error.name) || "Error";
+  const errorMessage = (error && error.message) || String(error || "");
+  const step = LAST_STEP && LAST_STEP.requestId === requestId ? LAST_STEP.step : "";
+  const action = LAST_STEP && LAST_STEP.requestId === requestId ? LAST_STEP.action : "";
+  return { action, errorName: name, errorMessage, lastStep: step };
 }
 
 function publicError(code, publicMessage) {
@@ -305,11 +361,12 @@ function importCsvSongs(payload) {
   if (!input.length) {
     return { inserted: 0, skipped: 0, errors: [] };
   }
-  setupSpreadsheet();
-  const existing = readTable("Songs");
-  const byTj = {};
-  const byTitleArtist = {};
-  existing.rows.forEach(({ values }) => {
+  return withScriptLock(() => {
+    setupSpreadsheet();
+    const existing = readTable("Songs");
+    const byTj = {};
+    const byTitleArtist = {};
+    existing.rows.forEach(({ values }) => {
     if (values.tjNumber) byTj[String(values.tjNumber)] = values;
     const key = String(values.title || "").trim().toLowerCase() + "|" + String(values.artist || "").trim().toLowerCase();
     if (key !== "|") byTitleArtist[key] = values;
@@ -318,7 +375,7 @@ function importCsvSongs(payload) {
   const inserted = [];
   const skipped = [];
   const errors = [];
-  input.forEach((raw, index) => {
+    input.forEach((raw, index) => {
     try {
       const song = normalizeImportedSong(raw, now);
       if (!song.title || !song.artist) {
@@ -343,6 +400,7 @@ function importCsvSongs(payload) {
   });
   appendRows("Songs", inserted);
   return { inserted: inserted.length, skipped: skipped.length, errors: errors.length, skippedDetails: skipped, errorsDetails: errors };
+  });
 }
 
 function migrateRecommendersToPerformers(options) {
@@ -656,9 +714,7 @@ function requirePermission(user, action) {
 function createPerformance(body) {
   const user = requireUser(body.idToken);
   requirePermission(user, "performance:create");
-  const lock = LockService.getDocumentLock();
-  lock.waitLock(8000);
-  try {
+  return withScriptLock(() => {
     const clientRequestId = String(body.clientRequestId || Utilities.getUuid());
     const duplicate = findChangeByClientRequestId(clientRequestId);
     if (duplicate) return { duplicate: true, id: duplicate.entityId };
@@ -681,9 +737,7 @@ function createPerformance(body) {
     appendRows("Performances", [row]);
     appendChange("Performance", id, "create", null, row, user, clientRequestId, 0, 1);
     return { id };
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 function cancelPerformance(body) {
@@ -691,9 +745,7 @@ function cancelPerformance(body) {
   requirePermission(user, "performance:cancel");
   const performanceId = String(body.performanceId || "");
   if (!performanceId) throw publicError("BAD_REQUEST", "performanceId가 필요해.");
-  const lock = LockService.getDocumentLock();
-  lock.waitLock(8000);
-  try {
+  return withScriptLock(() => {
     const clientRequestId = String(body.clientRequestId || Utilities.getUuid());
     const duplicate = findChangeByClientRequestId(clientRequestId);
     if (duplicate) return { duplicate: true, id: duplicate.entityId };
@@ -713,24 +765,34 @@ function cancelPerformance(body) {
     updateRow("Performances", target.rowNumber, next);
     appendChange("Performance", performanceId, "cancel", before, next, user, clientRequestId, Number(before.version || 1), next.version);
     return { id: performanceId, cancelledAt: now };
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
-function upsertSong(body) {
-  const user = requireUser(body.idToken);
+ function upsertSong(body, requestId) {
+  const reqId = requestId || newRequestId();
+  logStep(reqId, "upsertSong", "body parsed", { hasSong: Boolean(body && body.song), hasIdToken: Boolean(body && body.idToken), clientRequestId: body && body.clientRequestId ? String(body.clientRequestId) : "" });
+  let user;
+  logStep(reqId, "upsertSong", "auth start");
+  user = requireUser(body.idToken);
+  logStep(reqId, "upsertSong", "auth success", { role: user.role, emailHash: simpleHash(user.email) });
   requirePermission(user, body.song && body.song.id ? "song:update" : "song:create");
-  const lock = LockService.getDocumentLock();
-  lock.waitLock(8000);
-  try {
+  logStep(reqId, "upsertSong", "validation start", { mode: body.song && body.song.id ? "update" : "create" });
+  return withScriptLock(() => {
     const clientRequestId = String(body.clientRequestId || Utilities.getUuid());
-    const duplicate = findChangeByClientRequestId(clientRequestId);
-    if (duplicate) return duplicate.afterJson ? JSON.parse(duplicate.afterJson) : { duplicate: true };
+    logStep(reqId, "upsertSong", "spreadsheet open");
     const incoming = normalizeSongInput(body.song || {}, user);
+    logStep(reqId, "upsertSong", "validation done", { tjNumber: incoming.tjNumber, performerCount: JSON.parse(incoming.performerIdsJson || "[]").length });
+    logStep(reqId, "upsertSong", "duplicate check start", { clientRequestId });
+    const duplicate = findChangeByClientRequestId(clientRequestId);
+    if (duplicate) {
+      logStep(reqId, "upsertSong", "duplicate hit", { entityId: duplicate.entityId });
+      return duplicate.afterJson ? JSON.parse(duplicate.afterJson) : { duplicate: true };
+    }
+    logStep(reqId, "upsertSong", "duplicate check done");
     const table = readTable("Songs");
     const existing = incoming.id ? table.rows.find((row) => row.values.id === incoming.id) : null;
     preventDuplicateTj(table.rows, incoming, existing && existing.values.id);
+    logStep(reqId, "upsertSong", "row serialize", { isUpdate: Boolean(existing) });
     if (existing) {
       const expected = Number(body.song.expectedVersion || body.song.version || existing.values.version);
       if (Number(existing.values.version || 1) !== expected) throw publicError("CONFLICT", "다른 사용자가 먼저 수정했어.");
@@ -740,7 +802,9 @@ function upsertSong(body) {
         updatedAt: new Date().toISOString(),
         version: Number(existing.values.version || 1) + 1
       });
+      logStep(reqId, "upsertSong", "song write", { rowNumber: existing.rowNumber, version: next.version });
       updateRow("Songs", existing.rowNumber, next);
+      logStep(reqId, "upsertSong", "changelog write", { entityId: next.id, action: "update" });
       appendChange("Song", next.id, "update", existing.values, next, user, clientRequestId, existing.values.version || 1, next.version);
       return serializeSong(next, performanceStats());
     }
@@ -756,12 +820,22 @@ function upsertSong(body) {
       deletedByEmail: "",
       version: 1
     });
+    logStep(reqId, "upsertSong", "song write", { rowId: row.id });
     appendRows("Songs", [row]);
+    logStep(reqId, "upsertSong", "changelog write", { entityId: row.id, action: "create" });
     appendChange("Song", row.id, "create", null, row, user, clientRequestId, 0, 1);
     return serializeSong(row, performanceStats());
-  } finally {
-    lock.releaseLock();
+  });
+}
+
+function simpleHash(value) {
+  const text = String(value || "");
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
   }
+  return "h" + Math.abs(hash).toString(36);
 }
 
 function normalizeSongInput(song) {

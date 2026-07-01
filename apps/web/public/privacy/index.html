@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Songbook 개인정보처리방침</title>
+  <meta name="description" content="Okdam Songbook ChatGPT Action이 수집하는 정보와 보관/삭제 정책" />
+  <meta name="robots" content="noindex" />
+  <link rel="icon" href="../../icons/icon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      color-scheme: light dark;
+      --ink: #1b1f2a;
+      --muted: #4a5169;
+      --surface: #f5f6fb;
+      --border: #d8dbe6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f1f2f8;
+        --muted: #aab0c2;
+        --surface: #181b25;
+        --border: #2b3142;
+      }
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Pretendard, "Noto Sans KR", sans-serif;
+      background: var(--surface);
+      color: var(--ink);
+      line-height: 1.65;
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 32px 20px 80px;
+    }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; }
+    h2 { font-size: 1.15rem; margin: 32px 0 8px; }
+    p, li { color: var(--ink); }
+    .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 24px; }
+    a { color: #3f5fb7; }
+    .box {
+      border: 1px solid var(--border);
+      background: white;
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+    @media (prefers-color-scheme: dark) {
+      .box { background: #20242f; }
+    }
+    ul { padding-left: 20px; }
+    code { background: rgba(127,127,127,0.18); padding: 1px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Okdam Songbook 개인정보처리방침</h1>
+    <p class="meta">최종 업데이트: 2026-07-01 · 적용 범위: Songbook ChatGPT Action, Cloudflare Worker, Apps Script 백엔드, Google Sheets</p>
+
+    <h2>1. 수집하는 정보</h2>
+    <div class="box">
+      <ul>
+        <li>Google 계정 이메일</li>
+        <li>Google 계정 표시 이름</li>
+        <li>Google OpenID Connect <code>sub</code> (계정 고유 식별자)</li>
+        <li>곡 등록 요청 본문 (제목, 아티스트, TJ 번호, 부를 사람, 추천 키, 메모 등)</li>
+        <li>요청 시각과 ChangeLog (감사 로그)</li>
+      </ul>
+    </div>
+
+    <h2>2. 이용 목적</h2>
+    <ul>
+      <li>허용 사용자 여부 확인 (allowlist 검증)</li>
+      <li>곡 등록 및 중복 검사에 사용</li>
+      <li>변경 이력 감사 (누가 언제 어떤 곡을 추가했는지)</li>
+      <li>세션 만료 및 부정 사용 탐지</li>
+    </ul>
+
+    <h2>3. 허용 사용자</h2>
+    <p>이 Action은 사전에 등록된 Google 계정 3개만 사용할 수 있다. 그 외 계정이 로그인하면 <code>403</code>과 <code>FORBIDDEN</code> 응답을 받는다.</p>
+    <p>허용 계정은 Worker 시크릿 (<code>MARIE_EMAIL</code>, <code>SEONGWOOK_EMAIL</code>, <code>YEOWOOL_EMAIL</code>)으로 운영자가 관리한다.</p>
+
+    <h2>4. 보관 기간 및 위치</h2>
+    <ul>
+      <li>세션 토큰: 클라이언트 쿠키에 <code>SESSION_TTL_SECONDS</code>(기본 12시간) 동안만 보관</li>
+      <li>곡 데이터: 비공개 Google Sheet에 저장, 운영자가 명시적으로 삭제할 때까지 유지</li>
+      <li>ChangeLog: Google Sheet <code>ChangeLog</code> 시트에 누적</li>
+    </ul>
+
+    <h2>5. 제3자 공유</h2>
+    <p>수집한 정보를 제3자에게 판매하거나 공유하지 않는다. Apps Script와 Google Sheets는 데이터 처리 및 보관만을 위해 사용된다.</p>
+
+    <h2>6. 삭제 요청</h2>
+    <p>등록된 곡, ChangeLog, 세션 데이터의 삭제를 요청하려면 아래 연락처로 이메일을 보내주면, 운영자가 합리적인 기간(통상 14일) 이내에 처리한다.</p>
+
+    <h2>7. 연락처</h2>
+    <p>개인정보 관련 문의: 운영자가 별도로 안내한 비공개 연락처.</p>
+
+    <h2>8. 정책 변경</h2>
+    <p>이 정책은 필요 시 사전 공지 후 변경될 수 있다. 변경 시 이 페이지의 "최종 업데이트" 날짜를 갱신한다.</p>
+  </main>
+</body>
+</html>

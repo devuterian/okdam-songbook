@@ -1,0 +1,19 @@
+{
+  "name": "@songbook/chatgpt-proxy",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@songbook/shared": "file:../../packages/shared"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "wrangler": "^3.114.17"
+  }
+}

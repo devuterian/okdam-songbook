@@ -30,7 +30,7 @@ Recorded by agent: codex-orchestrator
 
 ## Production Binding (2026-07-01)
 
-- Apps Script project `1Pzp6evn-Oh-hTcp6lowody9egge0k8TiChYBaWpRzKvP8IrEcWPR8yJ1` is bound to `iam.marierie@gmail.com` and the clasp login is stored at `~/.clasprc.json`.
+- Apps Script project `1Pzp6evn-Oh-hTcp6lowody9egge0k8TiChYBaWpRzKvP8IrEcWPR8yJ1` is bound to the owner Google account and the clasp login is stored at `~/.clasprc.json`.
 - Google Sheet `Okdam Songbook Data` (private) is at `1VU3ad7z19J92V18DKmqVNzfpRzCKywXKxmXoD3EscgM`.
 - Script Properties (`SPREADSHEET_ID`, `GOOGLE_OAUTH_CLIENT_ID`, `ALLOWED_USERS_JSON`, `ALLOWED_ORIGINS=https://devuterian.github.io`, `APP_ENV=production`, `ALLOW_CSV_IMPORT=true`) are saved; production must flip `ALLOW_CSV_IMPORT` back to `false` after import.
 - Apps Script code is pushed via clasp. New server-side `cancelPerformance` handler + `/exec` route are live in the pushed source. New `db.ts` offline-queue row type now supports `performance:cancel` payloads.
@@ -99,7 +99,7 @@ Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357
 - `setupSpreadsheet()` ran in the editor; `Songs` / `Performances` / `ChangeLog` sheets exist.
 - New editor-only helper `importSeedSongsOnce()` is in `apps-script/src/Code.js` and the 115-song payload is in `apps-script/src/seedSongs.gs`. Operator ran it; Logger reported `inserted=115, totalSongsAfter=115, marie+yeowool=23`, and the function flipped `ALLOW_CSV_IMPORT` to `false`.
 - GitHub Actions Variable `VITE_APPS_SCRIPT_API_URL` is registered. Pages workflow sets `VITE_ENABLE_MOCK_API=false`, so the next Pages build will hit the real `/exec` URL.
-- `VITE_GOOGLE_CLIENT_ID` was already registered. Owner test user `iam.marierie@gmail.com` is in `ALLOWED_USERS_JSON` with `role: owner`.
+- `VITE_GOOGLE_CLIENT_ID` was already registered. The owner Google account is in `ALLOWED_USERS_JSON` with `role: owner`.
 
 ## Active Blockers And Risks
 
@@ -130,3 +130,13 @@ Repo-template 1.1.3 has been applied from `LPFchan/repo-template` commit `73f357
 - Verification: `npm run lint` clean, `npm run typecheck` clean,
   `npm run test` 53/53 (web 15/15 + shared 38/38), `npm run build` produces
   a fresh `index-Doi1asXn.js` PWA bundle.
+
+## ChatGPT Action OAuth integration (2026-07-01)
+
+- Cloudflare Worker `songbook-chatgpt-proxy` is deployed at `https://songbook-chatgpt-proxy.iam-marierie.workers.dev`.
+- Worker OAuth endpoints are live: `/authorize` redirects to Google OAuth, `/token` returns ChatGPT Action bearer credentials, and `/api/gptSearchSongs`, `/api/gptCheckDuplicate`, `/api/gptAddSong` forward only allowlisted Google users to Apps Script.
+- Custom GPT `Okdam Songbook Assistant` is saved at `https://chatgpt.com/g/g-6a451de53b6c819196b0060d51bbe18e-okdam-songbook-assistant` with link-only sharing, OAuth auth, the public privacy policy, and the three Songbook actions.
+- Actual ChatGPT OAuth callback IDs observed during preview are allowlisted in Worker vars for both `chatgpt.com` and `chat.openai.com`.
+- Apps Script deployment `AKfycbzjsFNu3vY0YSX3pTNRK5xDK3MVOwOxV76i5L52iQy2SoCxDOJsXQZ-i4IaKuBN6qz0` is updated to version 9 and web app access is `Anyone`; internal writes still require `INTERNAL_PROXY_SECRET` and actor metadata from the Worker.
+- E2E preview smoke passed: `searchSongs` returned 92 matches for `a`; `checkDuplicate` returned no duplicate for the smoke title; `addSong` inserted `Codex OAuth Smoke Test 20260701 2318` with id `1636081d-ea78-4cca-aa6c-b6be7f952ed1`, allowlisted owner actor, `sourceType=chatgpt`, and `sourceReference=chatgpt-action`.
+- Sheet verification: `/exec?action=publicData` returned 116 songs including the smoke song with `performerIds=["marie"]`; the `ChangeLog` sheet contains the smoke song afterJson with the ChatGPT Action source and actor metadata.
