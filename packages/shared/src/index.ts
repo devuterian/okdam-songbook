@@ -1,5 +1,6 @@
 export * from "./key";
 export * from "./normalize";
+export * from "./performers";
 export * from "./permissions";
 export * from "./sample";
 export * from "./schemas";

@@ -1,7 +1,8 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sampleSongs } from "@songbook/shared";
 import { PublicPage } from "../routes/PublicPage";
 
 const runnerStop = vi.fn();
@@ -89,7 +90,7 @@ describe("PublicPage", () => {
 
   it("renders the search interface", async () => {
     renderPublic();
-    expect(screen.getByPlaceholderText("곡명, 아티스트, 독음, TJ 번호")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("곡명, 아티스트, 독음, TJ 번호, 부를 사람")).toBeInTheDocument();
     expect(await screen.findByText("レーゾンデートル")).toBeInTheDocument();
   });
 
@@ -145,5 +146,39 @@ describe("PublicPage", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByLabelText("추천 키 있음")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /\d+곡 보기/ })).toBeInTheDocument();
+  });
+
+  it("shows migrated ponya performers in detail without recommender memo", async () => {
+    const user = userEvent.setup();
+    const migrated = sampleSongs.find((song) => song.performerIds.includes("marie") && song.performerIds.includes("yeowool"));
+    expect(migrated).toBeTruthy();
+    renderPublic();
+    await screen.findByText(migrated!.title);
+
+    await user.click(screen.getByRole("button", { name: new RegExp(migrated!.title) }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("부를 사람")).toBeInTheDocument();
+    expect(within(dialog).getByText("마리")).toBeInTheDocument();
+    expect(within(dialog).getByText("여울")).toBeInTheDocument();
+    expect(screen.queryByText(/추천인 뽀냐/)).not.toBeInTheDocument();
+  });
+
+  it("filters migrated ponya songs by Marie and Yeowool only", async () => {
+    const user = userEvent.setup();
+    const migrated = sampleSongs.find((song) => song.performerIds.includes("marie") && song.performerIds.includes("yeowool") && !song.performerIds.includes("seongwook"));
+    expect(migrated).toBeTruthy();
+    renderPublic();
+    await screen.findByText(migrated!.title);
+
+    await user.click(screen.getByRole("button", { name: "필터" }));
+    await user.click(screen.getByRole("button", { name: "마리" }));
+    expect(await screen.findByText(migrated!.title)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "마리" }));
+    await user.click(screen.getByRole("button", { name: "여울" }));
+    expect(await screen.findByText(migrated!.title)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "여울" }));
+    await user.click(screen.getByRole("button", { name: "성욱" }));
+    await waitFor(() => expect(screen.queryByText(migrated!.title)).not.toBeInTheDocument());
   });
 });

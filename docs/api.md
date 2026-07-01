@@ -26,5 +26,8 @@ Errors keep the same shape with `ok: false` and `error.code`.
 - `POST action=analyzeYouTube`
 - `GET action=schema`
 
-POST bodies are JSON sent as `text/plain;charset=utf-8` to fit Apps Script browser request constraints more reliably.
+`Song.performerIds` is an array of user IDs. The server accepts only `marie`,
+`seongwook`, and `yeowool`, deduplicates them, and writes them to
+`performerIdsJson` in the `Songs` sheet.
 
+POST bodies are JSON sent as `text/plain;charset=utf-8` to fit Apps Script browser request constraints more reliably.

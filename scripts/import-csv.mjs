@@ -106,6 +106,13 @@ function renderReport(report, sources) {
     inserted: report.inserted,
     skipped: report.skipped,
     warnings: report.warnings,
+    performerRows: report.performerRows,
+    ponyaRows: report.ponyaRows,
+    seongukCorrections: report.seongukCorrections,
+    yeoulCorrections: report.yeoulCorrections,
+    memoRecommenderRemoved: report.memoRecommenderRemoved,
+    unknownPerformerNames: report.unknownPerformerNames,
+    emptyPerformerIds: report.emptyPerformerIds,
     warningRows: report.warningRows,
     skippedRows: report.skippedRows
   };

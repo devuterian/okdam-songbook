@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-30T19:03:43.252Z",
+  "generatedAt": "2026-07-01T08:45:05.500Z",
   "sources": [
     {
       "name": "OK DAM!! 3 56a5080d79c147c1915776897acaee2f_all.csv",
@@ -34,6 +34,13 @@
   "inserted": 115,
   "skipped": 4,
   "warnings": 6,
+  "performerRows": 115,
+  "ponyaRows": 23,
+  "seongukCorrections": 0,
+  "yeoulCorrections": 0,
+  "memoRecommenderRemoved": 0,
+  "unknownPerformerNames": [],
+  "emptyPerformerIds": 0,
   "warningRows": [
     {
       "rowIndex": 7,

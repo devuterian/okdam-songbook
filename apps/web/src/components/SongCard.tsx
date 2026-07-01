@@ -1,6 +1,6 @@
 import type { Song } from "@songbook/shared";
-import { highlightParts, primaryKey } from "@songbook/shared";
-import { Heart } from "lucide-react";
+import { formatPerformerNames, highlightParts, primaryKey } from "@songbook/shared";
+import { Heart, Users } from "lucide-react";
 
 interface SongCardProps {
   disabled?: boolean;
@@ -24,6 +24,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
 
 export function SongCard({ disabled = false, song, query, onFavoriteClick, onOpen }: SongCardProps) {
   const keyLabel = primaryKey(song);
+  const performerLabel = formatPerformerNames(song.performerIds, true);
   const favorite = song.status === "favorite";
   const open = () => {
     if (!disabled) onOpen(song);
@@ -75,6 +76,12 @@ export function SongCard({ disabled = false, song, query, onFavoriteClick, onOpe
         </button>
       </span>
       <span className="song-meta">
+        {performerLabel ? (
+          <span className="performer-pill">
+            <Users size={13} aria-hidden="true" />
+            {performerLabel}
+          </span>
+        ) : null}
         {song.country ? <span>{song.country}</span> : null}
         {song.genres[0] ? <span>{song.genres[0]}</span> : null}
         {keyLabel ? <span>{keyLabel}</span> : null}

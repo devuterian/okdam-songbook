@@ -1,6 +1,7 @@
 import type { Song } from "./schemas";
 import { formatKeyCandidate } from "./key";
 import { getHangulChoseong, includesAllTokens, normalizeNumber, normalizeText } from "./normalize";
+import { performerSearchText, type PerformerId } from "./performers";
 import { isPublicSongStatus } from "./permissions";
 
 export type SortKey = "title" | "tjNumber" | "recentAdded" | "recentUpdated" | "recentPerformed" | "performanceCount";
@@ -12,6 +13,7 @@ export interface SongFilters {
   hasKey?: boolean;
   recentOnly?: boolean;
   createdByName?: string;
+  performerIds?: PerformerId[];
   hasTjNumber?: boolean;
   favorite?: boolean;
   practicing?: boolean;
@@ -35,6 +37,7 @@ export function buildSearchDocument(song: Song): string {
     song.genres.join(" "),
     song.originalWork,
     song.memo,
+    performerSearchText(song.performerIds),
     primaryKey(song)
   ];
   const text = fields.filter(Boolean).join(" ");
@@ -64,6 +67,7 @@ export function filterSongs(songs: Song[], filters: SongFilters, includeHidden =
     if (filters.hasKey && song.keyCandidates.length === 0) return false;
     if (filters.recentOnly && !song.lastPerformedAt) return false;
     if (filters.createdByName && song.createdByName !== filters.createdByName) return false;
+    if (filters.performerIds?.length && !filters.performerIds.some((id) => song.performerIds.includes(id))) return false;
     if (filters.hasTjNumber && !song.tjNumber) return false;
     if (filters.favorite && song.status !== "favorite") return false;
     if (filters.practicing && song.status !== "practicing") return false;
@@ -106,4 +110,3 @@ export function highlightParts(text: string, query: string): Array<{ text: strin
     { text: text.slice(index + first.length), hit: false }
   ].filter((part) => part.text.length > 0);
 }
-

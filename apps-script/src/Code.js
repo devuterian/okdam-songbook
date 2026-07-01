@@ -13,6 +13,7 @@ const SHEETS = {
     "genresJson",
     "originalWork",
     "keyCandidatesJson",
+    "performerIdsJson",
     "memo",
     "status",
     "youtubeUrl",
@@ -62,6 +63,20 @@ const SHEETS = {
 };
 
 const PUBLIC_STATUSES = ["active", "favorite", "practicing", "hold"];
+const PERFORMER_IDS = ["marie", "yeowool", "seongwook"];
+const PERFORMER_ALIASES = {
+  "마리": ["marie"],
+  "성욱": ["seongwook"],
+  "여울": ["yeowool"],
+  "뽀냐": ["marie", "yeowool"],
+  marie: ["marie"],
+  seongwook: ["seongwook"],
+  seonguk: ["seongwook"],
+  yeowool: ["yeowool"],
+  yeoul: ["yeowool"],
+  ponya: ["marie", "yeowool"]
+};
+const PERFORMER_ALIAS_KEYS = Object.keys(PERFORMER_ALIASES).sort((a, b) => b.length - a.length);
 
 function doGet(e) {
   return routeRequest(e, "GET");
@@ -190,6 +205,7 @@ function seedDevelopmentData() {
       genresJson: JSON.stringify(["보컬로이드"]),
       originalWork: "",
       keyCandidatesJson: JSON.stringify([{ id: "sample-key-id", baseMode: "original", offset: -2, label: "추천", memo: "", isPrimary: true }]),
+      performerIdsJson: JSON.stringify(["marie"]),
       memo: "",
       status: "active",
       youtubeUrl: "",
@@ -292,7 +308,66 @@ function importCsvSongs(payload) {
   return { inserted: inserted.length, skipped: skipped.length, errors: errors.length, skippedDetails: skipped, errorsDetails: errors };
 }
 
+function migrateRecommendersToPerformers(options) {
+  setupSpreadsheet();
+  const dryRun = !options || options.dryRun !== false;
+  const table = readTable("Songs");
+  const now = new Date().toISOString();
+  const report = {
+    dryRun,
+    scanned: table.rows.length,
+    changed: 0,
+    performerRows: 0,
+    ponyaRows: 0,
+    seongukCorrections: 0,
+    yeoulCorrections: 0,
+    memoRecommenderRemoved: 0,
+    unknownNames: [],
+    emptyPerformerIds: 0,
+    rows: []
+  };
+  table.rows.forEach(({ rowNumber, values }) => {
+    const before = Object.assign({}, values);
+    const migration = normalizePerformerIdsForSong(values);
+    if (migration.ids.length) report.performerRows += 1;
+    const rawText = [values.performerIdsJson, values.recommender, values.recommendedBy, values.createdByName, values.sourceReference, values.memo].join(" ");
+    if (/뽀냐|ponya/u.test(rawText)) report.ponyaRows += 1;
+    if (/seonguk/u.test(rawText)) report.seongukCorrections += 1;
+    if (/yeoul/u.test(rawText)) report.yeoulCorrections += 1;
+    migration.unknownNames.forEach((name) => {
+      if (report.unknownNames.indexOf(name) === -1) report.unknownNames.push(name);
+    });
+    report.memoRecommenderRemoved += migration.removedCount;
+    if (!migration.ids.length) report.emptyPerformerIds += 1;
+
+    const next = Object.assign({}, values, {
+      performerIdsJson: JSON.stringify(migration.ids),
+      memo: migration.memo,
+      sourceReference: stripPerformerSourceSuffix(values.sourceReference),
+      updatedAt: values.updatedAt || now
+    });
+    if (String(values.sourceType || "") === "csv" && normalizePerformerIds(values.createdByName || "").ids.length) {
+      next.createdByName = "";
+      next.updatedByName = "";
+    }
+    const changed = JSON.stringify(before) !== JSON.stringify(next);
+    if (!changed) return;
+    report.changed += 1;
+    report.rows.push({ rowNumber, id: String(values.id || ""), title: String(values.title || ""), before: before.performerIdsJson || "", after: next.performerIdsJson });
+    if (!dryRun) updateRow("Songs", rowNumber, next);
+  });
+  return report;
+}
+
+function stripPerformerSourceSuffix(sourceReference) {
+  const value = String(sourceReference || "");
+  const match = value.match(/^(.*):([^:]+)$/);
+  if (!match) return value;
+  return normalizePerformerIds(match[2]).ids.length ? match[1] : value;
+}
+
 function normalizeImportedSong(raw, now) {
+  const performerMigration = normalizePerformerIdsForSong(raw);
   const song = {
     id: raw.id || Utilities.getUuid(),
     tjNumber: normalizeTjNumber(raw.tjNumber),
@@ -307,7 +382,8 @@ function normalizeImportedSong(raw, now) {
     genresJson: JSON.stringify(Array.isArray(raw.genres) ? raw.genres : []),
     originalWork: String(raw.originalWork || "").trim().slice(0, 200),
     keyCandidatesJson: JSON.stringify(Array.isArray(raw.keyCandidates) ? raw.keyCandidates : []),
-    memo: String(raw.memo || "").trim().slice(0, 2000),
+    performerIdsJson: JSON.stringify(performerMigration.ids),
+    memo: String(performerMigration.memo || "").trim().slice(0, 2000),
     status: raw.status || "active",
     youtubeUrl: String(raw.youtubeUrl || "").trim(),
     youtubeVideoId: String(raw.youtubeVideoId || "").trim(),
@@ -333,6 +409,105 @@ function normalizeTjNumber(value) {
   return digits ? digits : "";
 }
 
+function normalizePerformerToken(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .replace(/^추천인\s*/u, "")
+    .replace(/^[()[\]{}"'`]+|[()[\]{}"'`]+$/gu, "")
+    .replace(/[。．.!！?？:：;；]+$/gu, "")
+    .replace(/\s+/gu, " ");
+}
+
+function addPerformerIds(target, ids) {
+  ids.forEach((id) => {
+    if (PERFORMER_IDS.indexOf(id) === -1) throw publicError("VALIDATION_ERROR", "알 수 없는 부를 사람 ID야: " + id);
+    if (target.indexOf(id) === -1) target.push(id);
+  });
+}
+
+function splitPerformerText(value) {
+  return normalizePerformerToken(value)
+    .replace(/[,，、/／·・\n\r\t]+/gu, " ")
+    .split(/\s+/u)
+    .map(normalizePerformerToken)
+    .filter(Boolean);
+}
+
+function normalizePerformerIds(value) {
+  const ids = [];
+  const unknownNames = [];
+  const values = Array.isArray(value) ? value : typeof value === "string" ? splitPerformerText(value) : [];
+  values.forEach((entry) => {
+    const token = normalizePerformerToken(entry);
+    if (!token) return;
+    const mapped = PERFORMER_ALIASES[token];
+    if (mapped) {
+      addPerformerIds(ids, mapped);
+      return;
+    }
+    if (unknownNames.indexOf(token) === -1) unknownNames.push(token);
+  });
+  return { ids, unknownNames };
+}
+
+function consumeLeadingPerformers(value) {
+  let rest = normalizePerformerToken(value);
+  const ids = [];
+  const unknownNames = [];
+  let consumed = false;
+  while (rest) {
+    rest = rest.replace(/^[\s,，、/／·・]+/u, "");
+    const alias = PERFORMER_ALIAS_KEYS.find((candidate) => rest === candidate || rest.indexOf(candidate + " ") === 0 || /^[,，、/／·・]/u.test(rest.slice(candidate.length, candidate.length + 1)));
+    if (!alias) break;
+    addPerformerIds(ids, PERFORMER_ALIASES[alias]);
+    rest = rest.slice(alias.length);
+    consumed = true;
+  }
+  if (!consumed && rest) {
+    const token = splitPerformerText(rest)[0];
+    if (token) unknownNames.push(token);
+  }
+  return { ids, unknownNames, rest: rest.replace(/^[\s,，、/／·・]+/u, "").trim() };
+}
+
+function migratePerformerMemo(memo) {
+  const ids = [];
+  const unknownNames = [];
+  let removedCount = 0;
+  const kept = String(memo || "")
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((parts, part) => {
+      if (!/^추천인\s+/u.test(part)) return parts.concat([part]);
+      const parsed = consumeLeadingPerformers(part.replace(/^추천인\s+/u, ""));
+      addPerformerIds(ids, parsed.ids);
+      parsed.unknownNames.forEach((name) => {
+        if (unknownNames.indexOf(name) === -1) unknownNames.push(name);
+      });
+      if (parsed.ids.length) removedCount += 1;
+      if (parsed.rest) return parts.concat([parsed.rest]);
+      return parsed.ids.length ? parts : parts.concat([part]);
+    }, []);
+  return { ids, unknownNames, memo: kept.join(" | "), removedCount };
+}
+
+function normalizePerformerIdsForSong(raw) {
+  const direct = normalizePerformerIds(raw.performerIds);
+  const legacyJson = normalizePerformerIds(parseJsonCell(raw.performerIdsJson, []));
+  const recommended = normalizePerformerIds(raw.recommender || raw.recommendedBy || "");
+  const createdBy = normalizePerformerIds(raw.createdByName || "");
+  const sourceMatch = String(raw.sourceReference || "").match(/:([^:]+)$/);
+  const source = normalizePerformerIds(sourceMatch ? sourceMatch[1] : "");
+  const memo = migratePerformerMemo(raw.memo || "");
+  const ids = [];
+  [direct.ids, legacyJson.ids, recommended.ids, createdBy.ids, source.ids, memo.ids].forEach((group) => addPerformerIds(ids, group));
+  const unknownNames = [].concat(direct.unknownNames, legacyJson.unknownNames, recommended.unknownNames, createdBy.unknownNames, source.unknownNames, memo.unknownNames)
+    .filter((name, index, all) => all.indexOf(name) === index);
+  return { ids, unknownNames, memo: memo.memo, removedCount: memo.removedCount };
+}
+
 function updateRow(name, rowNumber, object) {
   const sheet = getSpreadsheet().getSheetByName(name);
   sheet.getRange(rowNumber, 1, 1, SHEETS[name].length).setValues([objectToRow(name, object)]);
@@ -349,6 +524,7 @@ function parseJsonCell(value, fallback) {
 
 function serializeSong(row, performanceStats) {
   const stats = performanceStats[row.id] || { count: 0, last: "" };
+  const performerMigration = normalizePerformerIdsForSong(row);
   return {
     id: String(row.id),
     tjNumber: String(row.tjNumber || ""),
@@ -363,7 +539,8 @@ function serializeSong(row, performanceStats) {
     genres: parseJsonCell(row.genresJson, []),
     originalWork: String(row.originalWork || ""),
     keyCandidates: parseJsonCell(row.keyCandidatesJson, []),
-    memo: String(row.memo || ""),
+    performerIds: performerMigration.ids,
+    memo: String(performerMigration.memo || ""),
     status: String(row.status || "active"),
     youtubeUrl: String(row.youtubeUrl || ""),
     youtubeVideoId: String(row.youtubeVideoId || ""),
@@ -520,6 +697,7 @@ function upsertSong(body) {
 
 function normalizeSongInput(song) {
   if (!song.title || !song.artist) throw publicError("VALIDATION_ERROR", "곡명과 아티스트는 필수야.");
+  const performerIds = normalizePerformerIds(song.performerIds).ids;
   return {
     id: song.id || "",
     tjNumber: String(song.tjNumber || "").replace(/[^\d]/g, ""),
@@ -534,6 +712,7 @@ function normalizeSongInput(song) {
     genresJson: JSON.stringify(song.genres || []),
     originalWork: String(song.originalWork || "").trim(),
     keyCandidatesJson: JSON.stringify(song.keyCandidates || []),
+    performerIdsJson: JSON.stringify(performerIds),
     memo: String(song.memo || "").trim(),
     status: String(song.status || "active"),
     youtubeUrl: String(song.youtubeUrl || "").trim(),

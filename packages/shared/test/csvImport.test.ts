@@ -20,6 +20,9 @@ describe("importSongsFromCsv", () => {
     expect(backNumber?.keyCandidates[0]).toMatchObject({ baseMode: "female", offset: 2, isPrimary: true });
     const spring = report.songs.find((song) => song.artist === "米津玄師");
     expect(spring?.keyCandidates[0]).toMatchObject({ baseMode: "original", offset: -2, isPrimary: true });
+    const tikTakTok = report.songs.find((song) => song.title === "Tik Tak Tok");
+    expect(tikTakTok?.performerIds).toEqual(["marie", "yeowool"]);
+    expect(tikTakTok?.memo).not.toContain("추천인");
   });
 
   it("deduplicates by TJ number and by (title, artist)", () => {
@@ -45,5 +48,18 @@ describe("importSongsFromCsv", () => {
     const b = report.songs.find((s) => s.title === "B");
     expect(b?.keyCandidates[0]).toMatchObject({ baseMode: "male", offset: 0 });
     expect(b?._warnings.length).toBeGreaterThan(0);
+  });
+
+  it("moves generated recommender memo into performerIds", () => {
+    const rows = [
+      { title: "A", tjNumber: "1", artist: "X", memo: "추천인 뽀냐 / 후렴 높음" },
+      { title: "B", tjNumber: "2", artist: "Y", memo: "추천인 성욱 · 컨디션 좋을 때" }
+    ];
+    const report = importSongsFromCsv(rows, { csvFileName: "test.csv" });
+    expect(report.songs[0]?.performerIds).toEqual(["marie", "yeowool"]);
+    expect(report.songs[0]?.memo).toBe("후렴 높음");
+    expect(report.songs[1]?.performerIds).toEqual(["seongwook"]);
+    expect(report.songs[1]?.memo).toBe("컨디션 좋을 때");
+    expect(report.memoRecommenderRemoved).toBe(2);
   });
 });

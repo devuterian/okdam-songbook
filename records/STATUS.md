@@ -7,7 +7,7 @@ Recorded by agent: codex-orchestrator
 
 - Last updated: 2026-07-01
 - Overall posture: `active`
-- Current focus: 115 songs imported from the OK DAM personal page CSV are live in the mock seed and ready for Apps Script/Sheet deployment.
+- Current focus: 115 imported OK DAM songs now use structured `performerIds` instead of legacy recommender memo text.
 - Highest-priority blocker: Real Apps Script and Sheet deployment require operator-owned Google resources.
 - Next operator decision needed: Provide Apps Script deployment URL, Sheet ID, and allowed user emails.
 - Related decisions: DEC-20260701-001 through DEC-20260701-008
@@ -19,6 +19,14 @@ Recorded by agent: codex-orchestrator
 - Artifacts: `packages/shared/src/sample.ts` (auto-generated 115-song seed), `apps-script/seed/songs.json` (Apps Script payload), `apps-script/seed/import-report.json` (summary).
 - Backend hook: new `importCsvSongs(payload)` in `apps-script/src/Code.js` is idempotent and dedupes by TJ number and `(title, artist)`. Production requires `ALLOW_CSV_IMPORT=true`.
 - Verification: `npm run lint`, `npm run typecheck`, `npm run test` (18/18), `npm run build` all pass. Vite dev server on `http://127.0.0.1:5182/okdam-songbook/` returned 200 and served the new 115-song sample module.
+
+## Performer migration (2026-07-01)
+
+- Data model: `Song.performerIds` and Sheet `performerIdsJson` are now the structured source for who will sing a song.
+- Built-in performers: `marie` (마리), `seongwook` (성욱), `yeowool` (여울).
+- Legacy aliases: `뽀냐` imports and migrates to `marie` plus `yeowool`; `seonguk` and `yeoul` are accepted only as legacy misspellings and normalize to `seongwook` and `yeowool`.
+- Seed outcome: 115/115 imported songs have performer IDs; 23 legacy `뽀냐` rows became `["marie", "yeowool"]`; 0 unknown performer names; 0 empty performer rows.
+- Apps Script: `setupSpreadsheet()` appends `performerIdsJson`, `upsertSong` validates performer IDs, and `migrateRecommendersToPerformers({ dryRun })` migrates existing Sheet rows idempotently.
 
 ## Current State Summary
 

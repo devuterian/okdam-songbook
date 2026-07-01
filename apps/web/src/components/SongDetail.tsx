@@ -1,5 +1,5 @@
 import type { Song } from "@songbook/shared";
-import { can, primaryKey } from "@songbook/shared";
+import { can, formatPerformerNames, primaryKey, sortPerformerIds, performers } from "@songbook/shared";
 import { CalendarCheck, Edit3 } from "lucide-react";
 import type { CurrentUser } from "@songbook/shared";
 
@@ -10,6 +10,7 @@ interface SongDetailProps {
 }
 
 export function SongDetail({ song, user, onPerformed }: SongDetailProps) {
+  const performerIds = sortPerformerIds(song.performerIds);
   return (
     <div className="detail-grid">
       <div>
@@ -19,6 +20,20 @@ export function SongDetail({ song, user, onPerformed }: SongDetailProps) {
       <div>
         <span className="detail-label">추천 키</span>
         <strong>{primaryKey(song) || "미입력"}</strong>
+      </div>
+      <div>
+        <span className="detail-label">부를 사람</span>
+        {performerIds.length ? (
+          <div className="performer-chip-row" aria-label={formatPerformerNames(performerIds)}>
+            {performerIds.map((id) => (
+              <span key={id} className="performer-chip">
+                {performers[id].displayName}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span>미지정</span>
+        )}
       </div>
       <div>
         <span className="detail-label">곡명 독음</span>
@@ -59,4 +74,3 @@ export function SongDetail({ song, user, onPerformed }: SongDetailProps) {
     </div>
   );
 }
-

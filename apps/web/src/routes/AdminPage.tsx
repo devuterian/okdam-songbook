@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { Download, FileJson, Image, ListMusic, LogIn, Upload, Wand2, Youtube } from "lucide-react";
-import type { CurrentUser, Song } from "@songbook/shared";
-import { can, sampleSongs } from "@songbook/shared";
+import type { CurrentUser, PerformerId, Song } from "@songbook/shared";
+import { can, performerOrder, performers, sampleSongs } from "@songbook/shared";
 import { analyzeYouTube, fetchCurrentUser, generateReading, upsertSong } from "../lib/api";
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
@@ -65,7 +65,7 @@ export function AdminPage() {
   const [idToken, setIdToken] = useState("");
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [message, setMessage] = useState("");
-  const [draft, setDraft] = useState<Partial<Song>>({ title: "", artist: "", tjNumber: "", status: "active", country: "일본" });
+  const [draft, setDraft] = useState<Partial<Song>>({ title: "", artist: "", tjNumber: "", status: "active", country: "일본", performerIds: [] });
   const [youtubeUrl, setYoutubeUrl] = useState("");
 
   const loginWithToken = useCallback(async (token: string) => {
@@ -135,6 +135,14 @@ export function AdminPage() {
     const result = await analyzeYouTube(youtubeUrl, idToken || "mock");
     setDraft((prev) => ({ ...prev, ...result }));
     setMessage("YouTube 분석 후보를 불러왔어. 자동 저장은 하지 않았어.");
+  }
+
+  function toggleDraftPerformer(id: PerformerId) {
+    setDraft((previous) => {
+      const current = previous.performerIds ?? [];
+      const next = current.includes(id) ? current.filter((value) => value !== id) : [...current, id];
+      return { ...previous, performerIds: next };
+    });
   }
 
   return (
@@ -222,13 +230,31 @@ export function AdminPage() {
               국가
               <input value={draft.country ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, country: event.target.value }))} />
             </label>
+            <fieldset className="form-wide performer-fieldset">
+              <legend>부를 사람</legend>
+              <div className="chip-toggle-group">
+                {performerOrder.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className="chip-toggle"
+                    aria-pressed={Boolean(draft.performerIds?.includes(id))}
+                    data-selected={draft.performerIds?.includes(id) ? "true" : undefined}
+                    onClick={() => toggleDraftPerformer(id)}
+                  >
+                    {performers[id].displayName}
+                  </button>
+                ))}
+              </div>
+              <p className="hint">기존 '뽀냐' 데이터는 마리 + 여울로 변환됨</p>
+            </fieldset>
             <label className="form-wide">
               메모
               <textarea value={draft.memo ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, memo: event.target.value }))} />
             </label>
           </div>
           <div className="admin-action-bar">
-            <button type="button" className="secondary-button" onClick={() => setDraft({ title: "", artist: "", tjNumber: "", status: "active", country: "일본" })}>
+            <button type="button" className="secondary-button" onClick={() => setDraft({ title: "", artist: "", tjNumber: "", status: "active", country: "일본", performerIds: [] })}>
               취소
             </button>
             <span />

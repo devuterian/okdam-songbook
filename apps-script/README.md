@@ -52,3 +52,20 @@ The function is idempotent: it deduplicates by TJ number and by
 only the surviving rows to the `Songs` sheet. See
 `apps-script/seed/import-report.json` for the human-readable summary of what
 `scripts/import-csv.mjs` produced from the source CSV.
+
+## Migrate legacy recommenders to performers
+
+`setupSpreadsheet()` safely appends the `performerIdsJson` column without
+deleting existing rows. For a Sheet that already contains legacy recommender
+data, run the migration as a dry-run first:
+
+```sh
+npx clasp push
+npx clasp run migrateRecommendersToPerformers --params '[{"dryRun":true}]'
+npx clasp run migrateRecommendersToPerformers --params '[{"dryRun":false}]'
+```
+
+The migration is idempotent. It reads legacy `추천인`, `recommender`,
+`recommendedBy`, `createdByName`, `sourceReference`, and generated recommender
+memo text, writes `performerIdsJson`, removes only generated recommender memo
+phrases, and keeps ordinary memo text intact.

@@ -25,13 +25,14 @@ Songbook is a mobile-first karaoke favorite-song manager. It helps a small trust
 ## Core Capabilities
 
 - Dense mobile song list with TJ number priority and no album art.
-- Search by TJ number, title, artist, aliases, Korean reading, romanization, genre, country, original work, and memo.
+- Search by TJ number, title, artist, aliases, Korean reading, romanization, genre, country, original work, memo, and assigned performer.
 - Filter and sort by common karaoke workflows.
 - Bottom sheet song details with performance history and `오늘 불렀습니다!`.
 - Offline first read cache with IndexedDB and queued performance writes.
 - Google Identity Services login for admin UI, with server-side token and allowlist checks.
 - Owner/editor role matrix enforced by Apps Script.
 - Song CRUD, deletion candidate, soft delete, restore, owner hard delete, ChangeLog, undo, CSV import/export, JSON backup.
+- Songs store structured `performerIds` for who will sing the song. Built-in performers are `marie`, `seongwook`, and `yeowool`; legacy `뽀냐` input means `marie` plus `yeowool` and is not a stored user ID.
 - AI helper adapters for Korean reading generation, image extraction, and YouTube analysis, with safe manual fallback.
 
 ## Invariants

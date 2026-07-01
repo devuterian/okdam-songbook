@@ -1,8 +1,8 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Filter, Moon, RotateCcw, Search, SlidersHorizontal, Sun } from "lucide-react";
-import type { CurrentUser, Song, SongFilters, SortKey } from "@songbook/shared";
-import { filterSongs, searchSongs, sortSongs } from "@songbook/shared";
+import type { CurrentUser, PerformerId, Song, SongFilters, SortKey } from "@songbook/shared";
+import { filterSongs, performerOrder, performers, searchSongs, sortSongs } from "@songbook/shared";
 import { BottomSheet } from "../components/BottomSheet";
 import { SongCard } from "../components/SongCard";
 import { SongDetail } from "../components/SongDetail";
@@ -118,10 +118,11 @@ export function PublicPage() {
   const activeFilters = [
     filters.country ? { key: "country" as const, label: filters.country } : null,
     filters.genre ? { key: "genre" as const, label: filters.genre } : null,
+    ...(filters.performerIds ?? []).map((id) => ({ key: `performer:${id}` as const, label: `부를 사람: ${performers[id].displayName}` })),
     filters.hasKey ? { key: "hasKey" as const, label: "추천 키 있음" } : null,
     filters.favorite ? { key: "favorite" as const, label: "즐겨찾기" } : null,
     filters.practicing ? { key: "practicing" as const, label: "연습 중" } : null
-  ].filter(Boolean) as Array<{ key: keyof SongFilters; label: string }>;
+  ].filter(Boolean) as Array<{ key: keyof SongFilters | `performer:${PerformerId}`; label: string }>;
 
   function togglePhysics() {
     titleToggleRef.current = window.performance.now();
@@ -156,7 +157,23 @@ export function PublicPage() {
     if (window.performance.now() - titleToggleRef.current > 220) togglePhysics();
   }
 
-  function removeFilter(key: keyof SongFilters) {
+  function togglePerformerFilter(id: PerformerId) {
+    setFilters((previous) => {
+      const current = previous.performerIds ?? [];
+      const next = current.includes(id) ? current.filter((value) => value !== id) : [...current, id];
+      return { ...previous, performerIds: next.length ? next : undefined };
+    });
+  }
+
+  function removeFilter(key: keyof SongFilters | `performer:${PerformerId}`) {
+    if (key.startsWith("performer:")) {
+      const id = key.replace("performer:", "") as PerformerId;
+      setFilters((previous) => {
+        const next = (previous.performerIds ?? []).filter((value) => value !== id);
+        return { ...previous, performerIds: next.length ? next : undefined };
+      });
+      return;
+    }
     setFilters((previous) => ({ ...previous, [key]: undefined }));
   }
 
@@ -198,7 +215,7 @@ export function PublicPage() {
         </div>
         <label className="search-box">
           <Search size={18} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="곡명, 아티스트, 독음, TJ 번호" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="곡명, 아티스트, 독음, TJ 번호, 부를 사람" />
         </label>
         <div className="toolbar">
           <button type="button" onClick={() => setFilterOpen(true)}>
@@ -287,6 +304,23 @@ export function PublicPage() {
               ))}
             </select>
           </label>
+          <fieldset className="filter-fieldset">
+            <legend>부를 사람</legend>
+            <div className="chip-toggle-group">
+              {performerOrder.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  className="chip-toggle"
+                  aria-pressed={Boolean(filters.performerIds?.includes(id))}
+                  data-selected={filters.performerIds?.includes(id) ? "true" : undefined}
+                  onClick={() => togglePerformerFilter(id)}
+                >
+                  {performers[id].displayName}
+                </button>
+              ))}
+            </div>
+          </fieldset>
           <div className="checkbox-group">
             <label className="checkbox-row">
               <input type="checkbox" checked={Boolean(filters.hasKey)} onChange={(event) => setFilters((prev) => ({ ...prev, hasKey: event.target.checked || undefined }))} />

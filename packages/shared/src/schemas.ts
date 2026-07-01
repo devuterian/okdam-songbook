@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { performerOrder } from "./performers";
 
 export const songStatusSchema = z.enum([
   "active",
@@ -10,6 +11,7 @@ export const songStatusSchema = z.enum([
 ]);
 
 export const userRoleSchema = z.enum(["owner", "editor"]);
+export const performerIdSchema = z.enum(performerOrder);
 
 export const keyCandidateSchema = z.object({
   id: z.string().min(1),
@@ -34,6 +36,7 @@ export const songSchema = z.object({
   genres: z.array(z.string().trim().max(80)).default([]),
   originalWork: z.string().trim().max(200).optional().default(""),
   keyCandidates: z.array(keyCandidateSchema).default([]),
+  performerIds: z.array(performerIdSchema).default([]).transform((ids) => Array.from(new Set(ids))),
   memo: z.string().trim().max(2000).optional().default(""),
   status: songStatusSchema.default("active"),
   youtubeUrl: z.string().trim().url().or(z.literal("")).optional().default(""),
@@ -119,4 +122,3 @@ export type Song = z.infer<typeof songSchema>;
 export type Performance = z.infer<typeof performanceSchema>;
 export type CurrentUser = z.infer<typeof currentUserSchema>;
 export type PublicData = z.infer<typeof publicDataSchema>;
-

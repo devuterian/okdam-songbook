@@ -1,4 +1,5 @@
 import { parseCsvKey } from "./key";
+import { mergePerformerIds, migratePerformerMemo, normalizePerformerIds } from "./performers";
 import type { KeyCandidate, Song } from "./schemas";
 
 const GENRE_BY_COUNTRY: Record<string, string> = {
@@ -35,6 +36,13 @@ export interface CsvImportReport {
   inserted: number;
   skipped: number;
   warnings: number;
+  performerRows: number;
+  ponyaRows: number;
+  seongukCorrections: number;
+  yeoulCorrections: number;
+  memoRecommenderRemoved: number;
+  unknownPerformerNames: string[];
+  emptyPerformerIds: number;
   songs: ImportedSong[];
   skippedRows: Array<{ rowIndex: number; reason: string; raw: CsvRowInput }>;
   warningRows: Array<{ rowIndex: number; reason: string; raw: CsvRowInput }>;
@@ -71,10 +79,11 @@ function normalizeKeyCandidates(raw: string, keyIdFactory: () => string): { cand
   return { candidates: parsed.candidates, warnings: parsed.warnings };
 }
 
-function buildMemo(row: CsvRowInput, keyWarnings: string[]): string {
+function buildMemo(row: CsvRowInput, keyWarnings: string[], unknownPerformerNames: string[]): string {
   const parts: string[] = [];
-  if (row.recommender) parts.push(`추천인 ${row.recommender}`);
-  if (row.originalWork) parts.push(`원작 ${row.originalWork}`);
+  const migratedMemo = migratePerformerMemo(row.memo || "").memo;
+  if (migratedMemo) parts.push(migratedMemo);
+  unknownPerformerNames.forEach((name) => parts.push(`외부 부를 사람 원문 ${name}`));
   if (row.key && /[?？~～/]/.test(row.key)) {
     parts.push(`키 모호(${row.key}) - 원본 확인 필요`);
 }
@@ -82,8 +91,8 @@ function buildMemo(row: CsvRowInput, keyWarnings: string[]): string {
   return parts.join(" | ");
 }
 
-function buildSourceReference(csvFileName: string, recommender?: string): string {
-  return recommender ? `${csvFileName}:${recommender}` : csvFileName;
+function buildSourceReference(csvFileName: string): string {
+  return csvFileName;
 }
 
 export function csvRowToSong(row: CsvRowInput, rowIndex: number, options: CsvImportOptions): ImportedSong {
@@ -100,15 +109,19 @@ export function csvRowToSong(row: CsvRowInput, rowIndex: number, options: CsvImp
 
   const { candidates: keyCandidates, warnings: keyWarnings } = normalizeKeyCandidates(row.key || "", keyIdFactory);
   const warnings = [...keyWarnings];
+  const recommenderPerformers = normalizePerformerIds(recommender);
+  const memoPerformers = migratePerformerMemo(row.memo || "");
+  const performerIds = mergePerformerIds(recommenderPerformers.ids, memoPerformers.ids);
+  const unknownPerformerNames = Array.from(new Set([...recommenderPerformers.unknownNames, ...memoPerformers.unknownNames]));
 
   if (!title) warnings.push(`곡명이 비어있어 (행 ${rowIndex + 1})`);
   if (!artist) warnings.push(`아티스트가 비어있어 (행 ${rowIndex + 1})`);
+  unknownPerformerNames.forEach((name) => warnings.push(`알 수 없는 부를 사람 '${name}' (행 ${rowIndex + 1})`));
 
   const countryGenre = country && GENRE_BY_COUNTRY[country] ? GENRE_BY_COUNTRY[country] : "";
   const genres = Array.from(new Set([countryGenre, ...(row.genres ? [row.genres] : [])].filter(Boolean)));
 
   const createdAt = toIsoFromKoreanDate(row.createdAt, generatedAt);
-  const createdByName = recommender;
 
   const song: ImportedSong = {
     id: idFactory(),
@@ -124,16 +137,17 @@ export function csvRowToSong(row: CsvRowInput, rowIndex: number, options: CsvImp
     genres,
     originalWork,
     keyCandidates,
-    memo: buildMemo(row, keyWarnings),
+    performerIds,
+    memo: buildMemo(row, keyWarnings, unknownPerformerNames),
     status: "active",
     youtubeUrl: "",
     youtubeVideoId: "",
     isOfficialTjVideo: null,
     sourceType: "csv",
-    sourceReference: buildSourceReference(options.csvFileName, recommender),
-    createdByName,
+    sourceReference: buildSourceReference(options.csvFileName),
+    createdByName: "",
     createdAt,
-    updatedByName: createdByName,
+    updatedByName: "",
     updatedAt: createdAt,
     deletedAt: "",
     version: 1,
@@ -155,6 +169,13 @@ export function importSongsFromCsv(rows: CsvRowInput[], options: CsvImportOption
   const songs: ImportedSong[] = [];
   const skippedRows: CsvImportReport["skippedRows"] = [];
   const warningRows: CsvImportReport["warningRows"] = [];
+  const unknownPerformerNames: string[] = [];
+  let performerRows = 0;
+  let ponyaRows = 0;
+  let seongukCorrections = 0;
+  let yeoulCorrections = 0;
+  let memoRecommenderRemoved = 0;
+  let emptyPerformerIds = 0;
 
   rows.forEach((row, rowIndex) => {
     const song = csvRowToSong(row, rowIndex, options);
@@ -181,6 +202,17 @@ export function importSongsFromCsv(rows: CsvRowInput[], options: CsvImportOption
     if (song._warnings.length) {
       warningRows.push({ rowIndex, reason: song._warnings.join("; "), raw: row });
     }
+    const performerRaw = [row.recommender, row.memo].filter(Boolean).join(" ");
+    if (performerRaw.trim()) performerRows += 1;
+    if (/뽀냐|ponya/u.test(performerRaw)) ponyaRows += 1;
+    if (/seonguk/u.test(performerRaw)) seongukCorrections += 1;
+    if (/yeoul/u.test(performerRaw)) yeoulCorrections += 1;
+    memoRecommenderRemoved += migratePerformerMemo(row.memo || "").removedCount;
+    song._warnings.forEach((warning) => {
+      const match = warning.match(/알 수 없는 부를 사람 '(.+?)'/u);
+      if (match?.[1] && !unknownPerformerNames.includes(match[1])) unknownPerformerNames.push(match[1]);
+    });
+    if (song.performerIds.length === 0) emptyPerformerIds += 1;
     songs.push(song);
   });
 
@@ -189,6 +221,13 @@ export function importSongsFromCsv(rows: CsvRowInput[], options: CsvImportOption
     inserted: songs.length,
     skipped: skippedRows.length,
     warnings: warningRows.length,
+    performerRows,
+    ponyaRows,
+    seongukCorrections,
+    yeoulCorrections,
+    memoRecommenderRemoved,
+    unknownPerformerNames,
+    emptyPerformerIds,
     songs,
     skippedRows,
     warningRows

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCsvKey, sampleSongs, searchSongs, sortSongs } from "../src";
+import { filterSongs, parseCsvKey, sampleSongs, searchSongs, sortSongs } from "../src";
 import { getHangulChoseong, normalizeNumber, normalizeText } from "../src/normalize";
 
 describe("normalization", () => {
@@ -36,6 +36,23 @@ describe("search", () => {
     const tj = searchSongs(sampleSongs, "28805");
     expect(tj.length).toBeGreaterThan(0);
     expect(tj[0]?.tjNumber).toBe("28805");
+  });
+
+  it("searches ponya as a Marie and Yeowool performer alias", () => {
+    const results = searchSongs(sampleSongs, "뽀냐");
+    expect(results.length).toBeGreaterThan(0);
+    results.forEach((song) => {
+      expect(song.performerIds).toContain("marie");
+      expect(song.performerIds).toContain("yeowool");
+    });
+  });
+
+  it("filters migrated ponya songs by Marie and Yeowool but not Seongwook", () => {
+    const ponyaSong = sampleSongs.find((song) => song.performerIds.includes("marie") && song.performerIds.includes("yeowool") && !song.performerIds.includes("seongwook"));
+    expect(ponyaSong).toBeTruthy();
+    expect(filterSongs([ponyaSong!], { performerIds: ["marie"] })).toHaveLength(1);
+    expect(filterSongs([ponyaSong!], { performerIds: ["yeowool"] })).toHaveLength(1);
+    expect(filterSongs([ponyaSong!], { performerIds: ["seongwook"] })).toHaveLength(0);
   });
 
   it("supports multi-token AND search", () => {
